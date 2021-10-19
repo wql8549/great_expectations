@@ -3326,7 +3326,10 @@ Generated, evaluated, and stored %d Expectations during profiling. Please review
         """
         # TODO mark experimental
         batch_request = batch_request or {}
-        batch_identifiers = batch_request.get("batch_identifiers", {})
+        if isinstance(batch_request, BatchRequest):
+            batch_identifiers = getattr(batch_request, "batch_identifiers", {})
+        else:
+            batch_identifiers = batch_request.get("batch_identifiers", {})
         if self.ge_cloud_mode:
             if len(batch_identifiers.keys()) == 0:
                 batch_identifiers["timestamp"] = str(datetime.datetime.now())
