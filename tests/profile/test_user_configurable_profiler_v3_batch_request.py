@@ -5,6 +5,7 @@ import string
 
 import pandas as pd
 import pytest
+from pyspark.sql.types import DecimalType
 
 import great_expectations as ge
 from great_expectations.core.batch import Batch, RuntimeBatchRequest
@@ -57,6 +58,46 @@ def get_pandas_runtime_validator(context, df):
         data_connector_name="my_data_connector",
         data_asset_name="IN_MEMORY_DATA_ASSET",
         runtime_parameters={"batch_data": df},
+        batch_identifiers={
+            "an_example_key": "a",
+            "another_example_key": "b",
+        },
+    )
+
+    expectation_suite = context.create_expectation_suite(
+        "my_suite", overwrite_existing=True
+    )
+
+    validator = context.get_validator(
+        batch_request=batch_request, expectation_suite=expectation_suite
+    )
+
+    return validator
+
+
+def get_spark_runtime_validator_with_decimal_type(context):
+    df = pd.DataFrame(
+        {
+            "a": [1.1, 2.22, 3.0]
+        }
+    )
+
+    spark = get_or_create_spark_application(
+        spark_config={
+            "spark.sql.catalogImplementation": "hive",
+            "spark.executor.memory": "450m",
+            # "spark.driver.allowMultipleContexts": "true",  # This directive does not appear to have any effect.
+        }
+    )
+    df = spark.createDataFrame(df)
+    df_cast = df.withColumn("a", df.a.cast(DecimalType()))
+
+
+    batch_request = RuntimeBatchRequest(
+        datasource_name="my_spark_datasource",
+        data_connector_name="my_data_connector",
+        data_asset_name="IN_MEMORY_DATA_ASSET",
+        runtime_parameters={"batch_data": df_cast},
         batch_identifiers={
             "an_example_key": "a",
             "another_example_key": "b",
@@ -1024,3 +1065,14 @@ def test_expect_compound_columns_to_be_unique(
     }
 
     assert expected_expectations == expectations_from_suite
+
+
+def test_spark_decimal_type_is_correctly_processed(titanic_data_context_modular_api):
+    validator = get_spark_runtime_validator_with_decimal_type(titanic_data_context_modular_api)
+
+    profiler = UserConfigurableProfiler(validator)
+
+    suite = profiler.build_suite()
+
+    assert len(suite.expectations) == 7
+    assert profiler.column_info["a"]["type"] == "FLOAT"

@@ -150,6 +150,7 @@ class ProfilerTypeMapping:
         "number",
         "DECIMAL",
         "REAL",
+        "DecimalType"
     ]
     STRING_TYPE_NAMES = [
         "CHAR",

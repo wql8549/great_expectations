@@ -1,3 +1,5 @@
+import re
+
 from great_expectations.execution_engine import (
     PandasExecutionEngine,
     SparkDFExecutionEngine,
@@ -33,6 +35,8 @@ class ColumnMean(ColumnAggregateMetricProvider):
     def _spark(cls, column, _table, _column_name, **kwargs):
         """Spark Mean Implementation"""
         types = dict(_table.dtypes)
-        if types[_column_name] not in ("int", "float", "double", "bigint"):
+        decimal = re.compile("decimal\(\d+\,\d+\)")
+        if types[_column_name] not in ("int", "float", "double", "bigint") and not \
+                bool(decimal.match(types[_column_name])):
             raise TypeError("Expected numeric column type for function mean()")
         return F.mean(column)
