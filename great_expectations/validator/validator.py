@@ -264,7 +264,7 @@ class Validator:
 
             expectation_kwargs = recursively_convert_to_json_serializable(kwargs)
 
-            meta = None
+            meta = expectation_kwargs.pop("meta", None)
 
             # This section uses Expectation class' legacy_method_parameters attribute to maintain support for passing
             # positional arguments to expectation methods
