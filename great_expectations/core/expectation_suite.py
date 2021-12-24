@@ -22,6 +22,7 @@ from great_expectations.core.util import (
     nested_update,
     parse_string_to_datetime,
 )
+from great_expectations.data_context import data_context
 from great_expectations.exceptions import (
     DataContextError,
     InvalidExpectationConfigurationError,
@@ -590,11 +591,14 @@ class ExpectationSuite(SerializableDictDot):
     def send_usage_event(self, success: bool):
         usage_stats_event_name: str = "expectation_suite.add_expectation"
         usage_stats_event_payload: dict = {}
-        self._data_context.send_usage_message(
-            event=usage_stats_event_name,
-            event_payload=usage_stats_event_payload,
-            success=success,
-        )
+        handler = data_context.usage_statistics_handler
+        message: dict = {
+            "event": usage_stats_event_name,
+            "event_payload": usage_stats_event_payload,
+            "success": success,
+        }
+        if handler is not None:
+            handler.emit(message)
 
     def add_expectation(
         self,

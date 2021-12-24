@@ -120,6 +120,10 @@ yaml = YAML()
 yaml.indent(mapping=2, sequence=4, offset=2)
 yaml.default_flow_style = False
 
+# TODO: Should this usage_statistics_handler instead go into usage_statistics.py?
+# TODO: Should it instead be a dict of {data_context_id: UsageStatisticsHandler} to support multiple BaseDataContexts?
+usage_statistics_handler: Optional[UsageStatisticsHandler] = None
+
 
 class BaseDataContext:
     """
@@ -604,7 +608,9 @@ class BaseDataContext:
             self._usage_statistics_handler = None
             return
 
-        self._usage_statistics_handler = UsageStatisticsHandler(
+        # TODO: Can we move the handler instance to usage_statistics.py to avoid using `global` here?
+        global usage_statistics_handler
+        usage_statistics_handler = UsageStatisticsHandler(
             data_context=self,
             data_context_id=self._data_context_id,
             usage_statistics_url=usage_statistics_config.usage_statistics_url,
