@@ -53,6 +53,7 @@ from great_expectations.core.usage_statistics.schemas import (
     anonymized_usage_statistics_record_schema,
 )
 from great_expectations.core.util import nested_update
+from great_expectations.data_context import data_context
 from great_expectations.data_context.types.base import CheckpointConfig
 
 STOP_SIGNAL = object()
@@ -254,28 +255,8 @@ class UsageStatisticsHandler:
             logger.debug(log_message)
 
 
-def get_usage_statistics_handler(args_array):
-    try:
-        # If the object is usage_statistics-capable, then it will have a usage_statistics_handler
-        handler = getattr(args_array[0], "_usage_statistics_handler", None)
-        if handler is not None and not isinstance(handler, UsageStatisticsHandler):
-            logger.debug("Invalid UsageStatisticsHandler found on object.")
-            handler = None
-    except IndexError:
-        # A wrapped method that is not an object; this would be erroneous usage
-        logger.debug(
-            "usage_statistics enabled decorator should only be used on data context methods"
-        )
-        handler = None
-    except AttributeError:
-        # A wrapped method that is not usage_statistics capable
-        handler = None
-    except Exception as e:
-        # An unknown error -- but we still fail silently
-        logger.debug(
-            "Unrecognized error when trying to find usage_statistics_handler: " + str(e)
-        )
-        handler = None
+def get_usage_statistics_handler():
+    handler = data_context.usage_statistics_handler
     return handler
 
 
@@ -316,7 +297,7 @@ def usage_statistics_enabled_method(
                 time_end: int = int(round(time.time() * 1000))
                 delta_t: int = time_end - time_begin
 
-                handler = get_usage_statistics_handler(args)
+                handler = get_usage_statistics_handler()
                 if handler:
                     event_duration_property_name: str = (
                         f"{event_name}.duration".replace(".", "_")

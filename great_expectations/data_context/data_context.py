@@ -602,14 +602,14 @@ class BaseDataContext:
     def _initialize_usage_statistics(
         self, usage_statistics_config: AnonymizedUsageStatisticsConfig
     ):
+        # TODO: Can we move the handler instance to usage_statistics.py to avoid using `global` here?
+        global usage_statistics_handler
         """Initialize the usage statistics system."""
         if not usage_statistics_config.enabled:
             logger.info("Usage statistics is disabled; skipping initialization.")
-            self._usage_statistics_handler = None
+            usage_statistics_handler = None
             return
 
-        # TODO: Can we move the handler instance to usage_statistics.py to avoid using `global` here?
-        global usage_statistics_handler
         usage_statistics_handler = UsageStatisticsHandler(
             data_context=self,
             data_context_id=self._data_context_id,
