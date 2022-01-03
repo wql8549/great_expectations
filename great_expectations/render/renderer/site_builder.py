@@ -435,6 +435,7 @@ class DefaultSiteSectionBuilder:
                 source_store_keys = sorted(
                     source_store_keys, key=lambda x: x.run_id.run_time, reverse=True
                 )[: self.validation_results_limit]
+
         for resource_key in source_store_keys:
             # if no resource_identifiers are passed, the section
             # builder will build

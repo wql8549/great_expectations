@@ -60,7 +60,7 @@ from great_expectations.core.usage_statistics.usage_statistics import (
 )
 from great_expectations.core.util import nested_update
 from great_expectations.data_asset import DataAsset
-from great_expectations.data_context.store import Store, TupleStoreBackend
+from great_expectations.data_context.store import Store, TupleStoreBackend, HtmlSiteStore
 from great_expectations.data_context.templates import (
     CONFIG_VARIABLES_TEMPLATE,
     PROJECT_TEMPLATE_USAGE_STATISTICS_DISABLED,
@@ -671,6 +671,26 @@ class BaseDataContext:
                     self.root_directory, resource_store["base_directory"]
                 )
         return resource_store
+
+    def get_data_docs_html_site_store(self, site_name) -> HtmlSiteStore:
+        sites = self.project_config_with_variables_substituted.data_docs_sites
+        target_site = sites.get(site_name)
+
+        if not target_site:
+            raise ValueError(f"Site {site_name} not found. Please specify a site that is listed in your DataContext "
+                             f"config  ")
+
+        site_store = HtmlSiteStore(
+            store_backend=sites[target_site]["store_backend"],
+            runtime_environment={
+                "data_context": self,
+                "root_directory": self.root_directory,
+                "site_name": site_name,
+                "ge_cloud_mode": self.ge_cloud_mode,
+            }
+        )
+
+        return site_store
 
     def get_site_names(self) -> List[str]:
         """Get a list of configured site names."""
@@ -2459,7 +2479,6 @@ class BaseDataContext:
         resource_identifiers=None,
         dry_run=False,
         build_index: bool = True,
-        rebuild_previous_validation_result_pages: bool = False,
     ):
         """
         Build Data Docs for your project.
@@ -2484,8 +2503,7 @@ class BaseDataContext:
                             confirm.
 
         :param build_index: a flag if False, skips building the index page
-        :param rebuild_previous_validation_result_pages: a flag if False, skips building previously built validation and profiling
-            pages
+
 
         Returns:
             A dictionary with the names of the updated data documentation sites as keys and the the location info
@@ -2531,7 +2549,6 @@ class BaseDataContext:
                         index_page_resource_identifier_tuple = site_builder.build(
                             resource_identifiers,
                             build_index=(build_index and not self.ge_cloud_mode),
-                            rebuild_previous_validation_result_pages=rebuild_previous_validation_result_pages,
                         )
                         if index_page_resource_identifier_tuple:
                             index_page_locator_infos[
@@ -2542,6 +2559,37 @@ class BaseDataContext:
             logger.debug("No data_docs_config found. No site(s) built.")
 
         return index_page_locator_infos
+
+    def update_data_docs(self, site_names):
+        """
+
+        """
+
+        for site_name in site_names:
+            site_store = self.get_data_docs_html_site_store(site_name=site_name)
+
+            previously_rendered_validation_site_run_ids = [
+                identifier.run_id
+                for identifier in site_store.list_keys()
+                if isinstance(identifier, ValidationResultIdentifier)
+            ]
+
+            all_validation_store_keys = self.stores[self.validations_store_name].list_keys()
+
+            target_validation_store_keys = [
+                validation_to_render
+                for validation_to_render in all_validation_store_keys
+                if validation_to_render.run_id
+                not in previously_rendered_validation_site_run_ids
+            ]
+
+            # We want to rebuild expectation suites each time
+            all_expectation_store_keys = self.stores[self.expectations_store_name].list_keys()
+
+            resource_identifiers = target_validation_store_keys + all_expectation_store_keys
+
+            self.build_data_docs(resource_identifiers=resource_identifiers)
+
 
     def clean_data_docs(self, site_name=None) -> bool:
         """
