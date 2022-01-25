@@ -1,3 +1,4 @@
+import json
 import random
 import uuid
 from typing import Dict
@@ -156,6 +157,8 @@ class ValidationsStore(Store):
         """
         ge_cloud_suite_validation_result_id = response_json["data"]["id"]
         suite_validation_result_dict = response_json["data"]["attributes"]["result"]
+        if not isinstance(suite_validation_result_dict, dict):
+            suite_validation_result_dict = json.loads(suite_validation_result_dict)
         suite_validation_result_dict[
             "ge_cloud_id"
         ] = ge_cloud_suite_validation_result_id
