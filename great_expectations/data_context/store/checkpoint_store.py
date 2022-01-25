@@ -1,3 +1,4 @@
+import json
 import logging
 import random
 import uuid
@@ -29,6 +30,8 @@ class CheckpointStore(ConfigurationStore):
         checkpoint_config_dict = response_json["data"]["attributes"][
             "checkpoint_config"
         ]
+        if not isinstance(checkpoint_config_dict, dict):
+            checkpoint_config_dict = json.loads(checkpoint_config_dict)
         checkpoint_config_dict["ge_cloud_id"] = ge_cloud_checkpoint_id
 
         return checkpoint_config_dict
