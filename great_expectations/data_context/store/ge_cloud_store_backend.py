@@ -231,7 +231,8 @@ class GeCloudStoreBackend(StoreBackend, metaclass=ABCMeta):
             self.ge_cloud_base_url,
             f"organizations/"
             f"{self.ge_cloud_credentials['organization_id']}/"
-            f"{hyphen(self.ge_cloud_resource_name)}",
+            f"{hyphen(self.ge_cloud_resource_name)}"
+            "?page[size]=0"
         )
         try:
             response = requests.get(url, headers=self.auth_headers)
