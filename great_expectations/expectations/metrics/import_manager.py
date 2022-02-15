@@ -44,3 +44,9 @@ try:
 except ImportError:
     logger.debug("No spark SQLContext available.")
     SQLContext = None
+
+try:
+    from pyspark.sql import Row
+except ImportError:
+    logger.debug("No spark Row function available.")
+    Row = None
