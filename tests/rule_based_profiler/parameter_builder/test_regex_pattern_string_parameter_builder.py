@@ -1,8 +1,10 @@
+from array import array
 from typing import Set
 
 import pytest
 
 import great_expectations.exceptions.exceptions as ge_exceptions
+from great_expectations.core.batch import BatchRequest
 from great_expectations.data_context import DataContext
 from great_expectations.execution_engine.execution_engine import MetricDomainTypes
 from great_expectations.rule_based_profiler.parameter_builder import (
@@ -110,7 +112,7 @@ def test_regex_pattern_string_parameter_builder_alice(
     )
     assert parameter_container.parameter_nodes is None
 
-    regex_pattern_string_parameter._build_parameters(
+    regex_pattern_string_parameter.build_parameters(
         parameter_container=parameter_container, domain=domain
     )
 
@@ -247,3 +249,74 @@ def test_regex_pattern_string_parameter_builder_bobby_no_match(
         )
         == expected_value
     )
+
+
+def test_regex_pattern_string_parameter_builder_avengers(
+    avengers_tweet_table_single_batch_data_context,
+):
+    data_context: DataContext = avengers_tweet_table_single_batch_data_context
+    metric_domain_kwargs: dict = {
+        "column": "retweetCount"
+    }  # to match lat-"itude" and long-"itude"
+    candidate_regexes: Set[str] = {r"^\d*$"}
+    threshold: float = 0.9
+    batch_request_dict: dict = {
+        "datasource_name": "avengers_tweets_single_batch_datasource",
+        "data_connector_name": "avengers_tweets_single_batch_data_connector",
+        "data_asset_name": "avengers_tweets_single_batch_data_asset",
+        "data_connector_query": {"index": -1},
+    }
+    batch_request: BatchRequest = BatchRequest(**batch_request_dict)
+
+    # test validator
+    avengers_suite = data_context.create_expectation_suite(
+        expectation_suite_name="avengers_suite", overwrite_existing=True
+    )
+    my_validator = data_context.get_validator(
+        batch_request=batch_request, expectation_suite=avengers_suite
+    )
+
+    regex_parameter: RegexPatternStringParameterBuilder = (
+        RegexPatternStringParameterBuilder(
+            name="my_regex_pattern_string_parameter_builder",
+            metric_domain_kwargs=metric_domain_kwargs,
+            candidate_regexes=candidate_regexes,
+            threshold=threshold,
+            data_context=data_context,
+            batch_request=batch_request_dict,  # this is very strange
+        )
+    )
+
+    # create parameters that we pass as om
+
+    parameter_container: ParameterContainer = ParameterContainer(parameter_nodes=None)
+    domain: Domain = Domain(
+        domain_type=MetricDomainTypes.COLUMN, domain_kwargs=metric_domain_kwargs
+    )
+
+    assert parameter_container.parameter_nodes is None
+
+    regex_parameter.build_parameters(
+        parameter_container=parameter_container, domain=domain
+    )
+
+    # assert len(parameter_container.parameter_nodes) == 1
+
+    fully_qualified_parameter_name_for_value: str = (
+        "$parameter.my_regex_pattern_string_parameter_builder"
+    )
+    expected_value: dict = {
+        "details": {"success_ratio": 1, "value": r"^\d*$"},
+    }
+    yes = get_parameter_value_by_fully_qualified_parameter_name(
+        fully_qualified_parameter_name=fully_qualified_parameter_name_for_value,
+        domain=domain,
+        parameters={domain.id: parameter_container},
+    )
+    print(yes)
+    print("~~~~~~")
+    # assert get_parameter_value_by_fully_qualified_parameter_name(
+    #             fully_qualified_parameter_name=fully_qualified_parameter_name_for_value,
+    #             domain=domain,
+    #             parameters={domain.id: parameter_container},
+    # ) == expected_value
