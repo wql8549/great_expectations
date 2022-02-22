@@ -5070,6 +5070,7 @@ def profiler_config_with_placeholder_args(
 
     return RuleBasedProfilerConfig(
         name=profiler_name,
+        class_name="RuleBasedProfiler",
         config_version=1.0,
         variables={
             "false_positive_threshold": 1.0e-2,
@@ -5090,6 +5091,16 @@ def profiler_config_with_placeholder_args(
                     {
                         "class_name": "DefaultExpectationConfigurationBuilder",
                         "expectation_type": "expect_column_pair_values_A_to_be_greater_than_B",
+                        "column_A": "$domain.domain_kwargs.column_A",
+                        "column_B": "$domain.domain_kwargs.column_B",
+                        "my_arg": "$parameter.my_parameter.value[0]",
+                        "my_other_arg": "$parameter.my_parameter.value[1]",
+                        "meta": {
+                            "details": {
+                                "my_parameter_estimator": "$parameter.my_parameter.details",
+                                "note": "Important remarks about estimation algorithm.",
+                            },
+                        },
                     },
                 ],
             },
@@ -6171,7 +6182,13 @@ def bobby_columnar_table_multi_batch(empty_data_context):
                 "expectation_type": "expect_column_values_to_match_regex",
                 "kwargs": {
                     "column": "VendorID",
-                    "regex": {"value": r"^\d{1}$", "details": {"success_ratio": 1.0}},
+                    "regex": {
+                        "value": [r"^\d{1}$"],
+                        "details": {
+                            "evaluated_regexes": {r"^\d{1}$": 1.0, r"^\d{2}$": 0.0},
+                            "threshold": 0.9,
+                        },
+                    },
                 },
                 "meta": {
                     "notes": {
@@ -6189,7 +6206,13 @@ def bobby_columnar_table_multi_batch(empty_data_context):
                 "meta": {"notes": {"format": "markdown", "content": None}},
                 "kwargs": {
                     "column": "RatecodeID",
-                    "regex": {"value": r"^\d{1}$", "details": {"success_ratio": 1.0}},
+                    "regex": {
+                        "value": [r"^\d{1}$"],
+                        "details": {
+                            "evaluated_regexes": {r"^\d{1}$": 1.0, r"^\d{2}$": 0.0},
+                            "threshold": 0.9,
+                        },
+                    },
                 },
                 "meta": {
                     "notes": {
@@ -6207,7 +6230,13 @@ def bobby_columnar_table_multi_batch(empty_data_context):
                 "meta": {"notes": {"format": "markdown", "content": None}},
                 "kwargs": {
                     "column": "PULocationID",
-                    "regex": {"value": r"^\d{1}$", "details": {"success_ratio": 1.0}},
+                    "regex": {
+                        "value": [r"^\d{1}$"],
+                        "details": {
+                            "evaluated_regexes": {r"^\d{1}$": 1.0, r"^\d{2}$": 0.0},
+                            "threshold": 0.9,
+                        },
+                    },
                 },
                 "meta": {
                     "notes": {
@@ -6225,7 +6254,13 @@ def bobby_columnar_table_multi_batch(empty_data_context):
                 "meta": {"notes": {"format": "markdown", "content": None}},
                 "kwargs": {
                     "column": "DOLocationID",
-                    "regex": {"value": r"^\d{1}$", "details": {"success_ratio": 1.0}},
+                    "regex": {
+                        "value": [r"^\d{1}$"],
+                        "details": {
+                            "evaluated_regexes": {r"^\d{1}$": 1.0, r"^\d{2}$": 0.0},
+                            "threshold": 0.9,
+                        },
+                    },
                 },
                 "meta": {
                     "notes": {
