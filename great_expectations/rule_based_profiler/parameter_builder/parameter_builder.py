@@ -91,7 +91,9 @@ class ParameterBuilder(Builder, ABC):
         self,
         name: str,
         batch_list: Optional[List[Batch]] = None,
-        batch_request: Optional[Union[BatchRequest, RuntimeBatchRequest, dict]] = None,
+        batch_request: Optional[
+            Union[str, BatchRequest, RuntimeBatchRequest, dict]
+        ] = None,
         json_serialize: Union[str, bool] = True,
         data_context: Optional["DataContext"] = None,  # noqa: F821
     ):
@@ -514,6 +516,6 @@ class ParameterBuilder(Builder, ABC):
 """
                         )
 
-                    np.nan_to_num(metric_value_vector, copy=True, nan=0.0)
+                    np.nan_to_num(metric_value_vector, copy=False, nan=0.0)
 
         return metric_values

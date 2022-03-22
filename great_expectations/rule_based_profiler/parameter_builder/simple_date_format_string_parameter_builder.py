@@ -12,7 +12,11 @@ from great_expectations.rule_based_profiler.parameter_builder import (
     MetricValues,
     ParameterBuilder,
 )
-from great_expectations.rule_based_profiler.types import Domain, ParameterContainer
+from great_expectations.rule_based_profiler.types import (
+    PARAMETER_KEY,
+    Domain,
+    ParameterContainer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +98,9 @@ class SimpleDateFormatStringParameterBuilder(ParameterBuilder):
         threshold: Union[str, float] = 1.0,
         candidate_strings: Optional[Union[Iterable[str], str]] = None,
         batch_list: Optional[List[Batch]] = None,
-        batch_request: Optional[Union[BatchRequest, RuntimeBatchRequest, dict]] = None,
+        batch_request: Optional[
+            Union[str, BatchRequest, RuntimeBatchRequest, dict]
+        ] = None,
         json_serialize: bool = True,
         data_context: Optional["DataContext"] = None,  # noqa: F821
     ):
@@ -133,7 +139,7 @@ class SimpleDateFormatStringParameterBuilder(ParameterBuilder):
 
     @property
     def fully_qualified_parameter_name(self) -> str:
-        return f"$parameter.{self.name}"
+        return f"{PARAMETER_KEY}{self.name}"
 
     """
     Full getter/setter accessors for needed properties are for configuring MetricMultiBatchParameterBuilder dynamically.

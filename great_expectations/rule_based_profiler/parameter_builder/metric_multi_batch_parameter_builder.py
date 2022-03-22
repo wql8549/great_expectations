@@ -11,7 +11,11 @@ from great_expectations.rule_based_profiler.parameter_builder import (
     MetricValues,
     ParameterBuilder,
 )
-from great_expectations.rule_based_profiler.types import Domain, ParameterContainer
+from great_expectations.rule_based_profiler.types import (
+    PARAMETER_KEY,
+    Domain,
+    ParameterContainer,
+)
 
 
 class MetricMultiBatchParameterBuilder(ParameterBuilder):
@@ -30,7 +34,9 @@ class MetricMultiBatchParameterBuilder(ParameterBuilder):
         replace_nan_with_zero: Union[str, bool] = False,
         reduce_scalar_metric: Union[str, bool] = True,
         batch_list: Optional[List[Batch]] = None,
-        batch_request: Optional[Union[BatchRequest, RuntimeBatchRequest, dict]] = None,
+        batch_request: Optional[
+            Union[str, BatchRequest, RuntimeBatchRequest, dict]
+        ] = None,
         json_serialize: Union[str, bool] = True,
         data_context: Optional["DataContext"] = None,  # noqa: F821
     ):
@@ -70,7 +76,7 @@ class MetricMultiBatchParameterBuilder(ParameterBuilder):
 
     @property
     def fully_qualified_parameter_name(self) -> str:
-        return f"$parameter.{self.name}"
+        return f"{PARAMETER_KEY}{self.name}"
 
     """
     Full getter/setter accessors for needed properties are for configuring MetricMultiBatchParameterBuilder dynamically.
