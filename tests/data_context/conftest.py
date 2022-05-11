@@ -1,5 +1,6 @@
 import os
 import shutil
+from unittest.mock import PropertyMock, patch
 
 import pytest
 
@@ -160,3 +161,427 @@ def basic_data_context_config():
             },
         }
     )
+
+
+@pytest.fixture
+def basic_data_context_config_dict(basic_data_context_config):
+    """Wrapper fixture to transform `basic_data_context_config` to a json dict"""
+    return basic_data_context_config.to_json_dict()
+
+
+@pytest.fixture
+def conn_string_password():
+    """Returns a stable password for mocking connection strings"""
+    return "not_a_password"
+
+
+@pytest.fixture
+def conn_string_with_embedded_password(conn_string_password):
+    """
+    A mock connection string with the `conn_string_password` fixture embedded.
+    """
+    return f"redshift+psycopg2://no_user:{conn_string_password}@111.11.1.1:1111/foo"
+
+
+@pytest.fixture
+def data_context_config_with_datasources(conn_string_password):
+    return DataContextConfig(
+        **{
+            "commented_map": {},
+            "config_version": 2,
+            "plugins_directory": "plugins/",
+            "evaluation_parameter_store_name": "evaluation_parameter_store",
+            "validations_store_name": "does_not_have_to_be_real",
+            "expectations_store_name": "expectations_store",
+            "config_variables_file_path": "uncommitted/config_variables.yml",
+            "datasources": {
+                "Datasource 1: Redshift": {
+                    "class_name": "Datasource",
+                    "data_connectors": {
+                        "default_configured_asset_sql_data_connector": {
+                            "assets": {},
+                            "batch_spec_passthrough": {"sample": "value"},
+                            "class_name": "ConfiguredAssetSqlDataConnector",
+                        }
+                    },
+                    "execution_engine": {
+                        "class_name": "SqlAlchemyExecutionEngine",
+                        "connection_string": f"redshift+psycopg2://no_user:{conn_string_password}@111.11.1.1:1111/foo",
+                    },
+                    "module_name": "great_expectations.datasource",
+                },
+                "Datasource 2: Postgres": {
+                    "class_name": "Datasource",
+                    "data_connectors": {
+                        "default_configured_asset_sql_data_connector_sqlalchemy": {
+                            "assets": {},
+                            "batch_spec_passthrough": {"sample": "value"},
+                            "class_name": "ConfiguredAssetSqlDataConnector",
+                        }
+                    },
+                    "execution_engine": {
+                        "class_name": "SqlAlchemyExecutionEngine",
+                        "connection_string": f"postgresql://no_user:{conn_string_password}@some_url:1111/postgres?sslmode=prefer",
+                    },
+                    "module_name": "great_expectations.datasource",
+                },
+                "Datasource 3: MySQL": {
+                    "class_name": "Datasource",
+                    "data_connectors": {
+                        "default_configured_asset_sql_data_connector_sqlalchemy": {
+                            "assets": {},
+                            "batch_spec_passthrough": {"sample": "value"},
+                            "class_name": "ConfiguredAssetSqlDataConnector",
+                        }
+                    },
+                    "execution_engine": {
+                        "class_name": "SqlAlchemyExecutionEngine",
+                        "connection_string": f"mysql+pymysql://no_user:{conn_string_password}@some_url:1111/foo",
+                    },
+                    "module_name": "great_expectations.datasource",
+                },
+                "Datasource 4: Pandas": {
+                    # no creds to be masked here, shouldnt be affected
+                    "class_name": "Datasource",
+                    "data_connectors": {
+                        "default_runtime_data_connector": {
+                            "batch_identifiers": ["col"],
+                            "batch_spec_passthrough": {"sample": "value"},
+                            "class_name": "RuntimeDataConnector",
+                        }
+                    },
+                    "execution_engine": {"class_name": "PandasExecutionEngine"},
+                    "module_name": "great_expectations.datasource",
+                },
+                "Datasource 5: Snowflake": {
+                    "class_name": "Datasource",
+                    "data_connectors": {
+                        "default_configured_asset_sql_data_connector_snowflake": {
+                            "assets": {
+                                "taxi_data": {
+                                    "table_name": "taxi_data",
+                                    "type": "table",
+                                }
+                            },
+                            "batch_spec_passthrough": {"sample": "value"},
+                            "class_name": "ConfiguredAssetSqlDataConnector",
+                        }
+                    },
+                    "execution_engine": {
+                        "class_name": "SqlAlchemyExecutionEngine",
+                        "connection_string": f"snowflake://no_user:{conn_string_password}@some_url/foo/PUBLIC?role=PUBLIC&warehouse=bar",
+                    },
+                    "module_name": "great_expectations.datasource",
+                },
+                "Datasource 6: Spark": {
+                    "class_name": "Datasource",
+                    "data_connectors": {
+                        "default_runtime_data_connector": {
+                            "batch_identifiers": ["batch", "identifiers", "here"],
+                            "batch_spec_passthrough": {"sample": "value"},
+                            "class_name": "RuntimeDataConnector",
+                        }
+                    },
+                    "execution_engine": {"class_name": "SparkDFExecutionEngine"},
+                    "module_name": "great_expectations.datasource",
+                },
+            },
+            "stores": {
+                "expectations_store": {
+                    "class_name": "ExpectationsStore",
+                    "store_backend": {
+                        "class_name": "TupleFilesystemStoreBackend",
+                        "base_directory": "expectations/",
+                    },
+                },
+                "evaluation_parameter_store": {
+                    "module_name": "great_expectations.data_context.store",
+                    "class_name": "EvaluationParameterStore",
+                },
+            },
+            "data_docs_sites": {},
+            "validation_operators": {
+                "default": {
+                    "class_name": "ActionListValidationOperator",
+                    "action_list": [],
+                }
+            },
+            "anonymous_usage_statistics": {
+                "enabled": True,
+                "data_context_id": "6a52bdfa-e182-455b-a825-e69f076e67d6",
+                "usage_statistics_url": USAGE_STATISTICS_QA_URL,
+            },
+        }
+    )
+
+
+@pytest.fixture
+def data_context_config_dict_with_datasources(data_context_config_with_datasources):
+    """Wrapper fixture to transform `data_context_config_with_datasources` to a json dict"""
+    return data_context_config_with_datasources.to_json_dict()
+
+
+@pytest.fixture
+def data_context_config_with_cloud_backed_stores(ge_cloud_access_token):
+    org_id = "a34595b2-267e-4469-b18f-774e65dc556f"
+    return DataContextConfig(
+        **{
+            "commented_map": {},
+            "config_version": 2,
+            "plugins_directory": "plugins/",
+            "evaluation_parameter_store_name": "evaluation_parameter_store",
+            "validations_store_name": "does_not_have_to_be_real",
+            "expectations_store_name": "expectations_store",
+            "config_variables_file_path": "uncommitted/config_variables.yml",
+            "datasources": {},
+            "stores": {
+                "default_checkpoint_store": {
+                    "class_name": "CheckpointStore",
+                    "store_backend": {
+                        "class_name": "GeCloudStoreBackend",
+                        "ge_cloud_base_url": "http://foo/bar/",
+                        "ge_cloud_credentials": {
+                            "access_token": ge_cloud_access_token,
+                            "organization_id": org_id,
+                        },
+                        "ge_cloud_resource_type": "contract",
+                        "suppress_store_backend_id": True,
+                    },
+                },
+                "default_evaluation_parameter_store": {
+                    "class_name": "EvaluationParameterStore"
+                },
+                "default_expectations_store": {
+                    "class_name": "ExpectationsStore",
+                    "store_backend": {
+                        "class_name": "GeCloudStoreBackend",
+                        "ge_cloud_base_url": "http://foo/bar/",
+                        "ge_cloud_credentials": {
+                            "access_token": ge_cloud_access_token,
+                            "organization_id": org_id,
+                        },
+                        "ge_cloud_resource_type": "expectation_suite",
+                        "suppress_store_backend_id": True,
+                    },
+                },
+                "default_validations_store": {
+                    "class_name": "ValidationsStore",
+                    "store_backend": {
+                        "class_name": "GeCloudStoreBackend",
+                        "ge_cloud_base_url": "http://foo/bar/",
+                        "ge_cloud_credentials": {
+                            "access_token": ge_cloud_access_token,
+                            "organization_id": org_id,
+                        },
+                        "ge_cloud_resource_type": "suite_validation_result",
+                        "suppress_store_backend_id": True,
+                    },
+                },
+            },
+            "data_docs_sites": {},
+            "validation_operators": {
+                "default": {
+                    "class_name": "ActionListValidationOperator",
+                    "action_list": [],
+                }
+            },
+            "anonymous_usage_statistics": {
+                "enabled": True,
+                "data_context_id": "6a52bdfa-e182-455b-a825-e69f076e67d6",
+                "usage_statistics_url": USAGE_STATISTICS_QA_URL,
+            },
+        }
+    )
+
+
+@pytest.fixture
+def data_context_config_dict_with_cloud_backed_stores(
+    data_context_config_with_cloud_backed_stores,
+):
+    """Wrapper fixture to transform `data_context_config_with_cloud_backed_stores` to a json dict"""
+    return data_context_config_with_cloud_backed_stores.to_json_dict()
+
+
+@pytest.fixture
+def ge_cloud_runtime_base_url():
+    return "https://api.dev.greatexpectations.io/runtime"
+
+
+@pytest.fixture
+def ge_cloud_runtime_organization_id():
+    return "a8a35168-68d5-4366-90ae-00647463d37e"
+
+
+@pytest.fixture
+def ge_cloud_runtime_access_token():
+    return "b17bc2539062410db0a30e28fb0ee930"
+
+
+@pytest.fixture
+def mocked_global_config_dirs(tmp_path):
+    mock_global_config_dot_dir = tmp_path / ".great_expectations"
+    mock_global_config_dot_dir_file = (
+        mock_global_config_dot_dir / "great_expectations.conf"
+    )
+    mock_global_config_dot_dir.mkdir(parents=True)
+    mock_global_config_etc_dir = tmp_path / "etc"
+    mock_global_config_etc_file = mock_global_config_etc_dir / "great_expectations.conf"
+    mock_global_config_etc_dir.mkdir(parents=True)
+
+    mock_global_config_paths = [
+        str(mock_global_config_dot_dir_file),
+        str(mock_global_config_etc_file),
+    ]
+
+    return (
+        mock_global_config_dot_dir,
+        mock_global_config_etc_dir,
+        mock_global_config_paths,
+    )
+
+
+@pytest.fixture
+def data_context_with_empty_global_config_dirs(
+    mocked_global_config_dirs,
+):
+    with patch(
+        "great_expectations.data_context.data_context.BaseDataContext.GLOBAL_CONFIG_PATHS",
+        new_callable=PropertyMock,
+    ) as mock:
+        (
+            mock_global_config_dot_dir,
+            mock_global_config_etc_dir,
+            mock_global_config_paths,
+        ) = mocked_global_config_dirs
+        mock.return_value = mock_global_config_paths
+
+        yield
+
+
+@pytest.fixture
+def data_context_with_complete_global_config_in_dot_and_etc_dirs(
+    mocked_global_config_dirs,
+):
+    with patch(
+        "great_expectations.data_context.data_context.BaseDataContext.GLOBAL_CONFIG_PATHS",
+        new_callable=PropertyMock,
+    ) as mock:
+        (
+            mock_global_config_dot_dir,
+            mock_global_config_etc_dir,
+            mock_global_config_paths,
+        ) = mocked_global_config_dirs
+        mock.return_value = mock_global_config_paths
+
+        shutil.copy(
+            file_relative_path(
+                __file__,
+                "fixtures/conf/great_expectations_cloud_config_complete_1.conf",
+            ),
+            str(os.path.join(mock_global_config_dot_dir, "great_expectations.conf")),
+        )
+        shutil.copy(
+            file_relative_path(
+                __file__,
+                "fixtures/conf/great_expectations_cloud_config_complete_2.conf",
+            ),
+            str(os.path.join(mock_global_config_etc_dir, "great_expectations.conf")),
+        )
+        yield
+
+
+@pytest.fixture
+def data_context_with_complete_global_config_in_dot_dir_only(mocked_global_config_dirs):
+    with patch(
+        "great_expectations.data_context.data_context.BaseDataContext.GLOBAL_CONFIG_PATHS",
+        new_callable=PropertyMock,
+    ) as mock:
+        (
+            mock_global_config_dot_dir,
+            mock_global_config_etc_dir,
+            mock_global_config_paths,
+        ) = mocked_global_config_dirs
+        mock.return_value = mock_global_config_paths
+
+        shutil.copy(
+            file_relative_path(
+                __file__,
+                "fixtures/conf/great_expectations_cloud_config_complete_1.conf",
+            ),
+            str(os.path.join(mock_global_config_dot_dir, "great_expectations.conf")),
+        )
+        yield
+
+
+@pytest.fixture
+def data_context_with_complete_global_config_with_usage_stats_section_in_dot_dir_only(
+    mocked_global_config_dirs,
+):
+    with patch(
+        "great_expectations.data_context.data_context.BaseDataContext.GLOBAL_CONFIG_PATHS",
+        new_callable=PropertyMock,
+    ) as mock:
+        (
+            mock_global_config_dot_dir,
+            mock_global_config_etc_dir,
+            mock_global_config_paths,
+        ) = mocked_global_config_dirs
+        mock.return_value = mock_global_config_paths
+
+        shutil.copy(
+            file_relative_path(
+                __file__,
+                "fixtures/conf/great_expectations_cloud_config_complete_with_usage_stats_section.conf",
+            ),
+            str(os.path.join(mock_global_config_dot_dir, "great_expectations.conf")),
+        )
+        yield
+
+
+@pytest.fixture
+def data_context_with_complete_global_config_in_etc_dir_only(mocked_global_config_dirs):
+    with patch(
+        "great_expectations.data_context.data_context.BaseDataContext.GLOBAL_CONFIG_PATHS",
+        new_callable=PropertyMock,
+    ) as mock:
+        (
+            mock_global_config_dot_dir,
+            mock_global_config_etc_dir,
+            mock_global_config_paths,
+        ) = mocked_global_config_dirs
+        mock.return_value = mock_global_config_paths
+
+        shutil.copy(
+            file_relative_path(
+                __file__,
+                "fixtures/conf/great_expectations_cloud_config_complete_2.conf",
+            ),
+            str(os.path.join(mock_global_config_etc_dir, "great_expectations.conf")),
+        )
+        yield
+
+
+@pytest.fixture
+def data_context_with_incomplete_global_config_in_dot_dir_only(
+    mocked_global_config_dirs,
+):
+    # missing access_token
+    with patch(
+        "great_expectations.data_context.data_context.BaseDataContext.GLOBAL_CONFIG_PATHS",
+        new_callable=PropertyMock,
+    ) as mock:
+        (
+            mock_global_config_dot_dir,
+            mock_global_config_etc_dir,
+            mock_global_config_paths,
+        ) = mocked_global_config_dirs
+        mock.return_value = mock_global_config_paths
+
+        shutil.copy(
+            file_relative_path(
+                __file__,
+                "fixtures/conf/great_expectations_cloud_config_minimal_missing_token_1.conf",
+            ),
+            str(os.path.join(mock_global_config_dot_dir, "great_expectations.conf")),
+        )
+        yield

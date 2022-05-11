@@ -5,17 +5,16 @@ from great_expectations.execution_engine import (
     ExecutionEngine,
     PandasExecutionEngine,
     SparkDFExecutionEngine,
-)
-from great_expectations.execution_engine.sqlalchemy_execution_engine import (
     SqlAlchemyExecutionEngine,
 )
 from great_expectations.expectations.metrics.import_manager import F, sa
-from great_expectations.expectations.metrics.map_metric import (
+from great_expectations.expectations.metrics.map_metric_provider import (
     ColumnMapMetricProvider,
     column_condition_partial,
     column_function_partial,
 )
-from great_expectations.validator.validation_graph import MetricConfiguration
+from great_expectations.util import pandas_series_between_inclusive
+from great_expectations.validator.metric_configuration import MetricConfiguration
 
 
 class ColumnValuesValueLengthEquals(ColumnMapMetricProvider):
@@ -112,8 +111,8 @@ class ColumnValuesValueLength(ColumnMapMetricProvider):
                     column_lengths < max_value
                 )
             elif not strict_min and not strict_max:
-                metric_series = column_lengths.between(
-                    min_value, max_value, inclusive=True
+                metric_series = pandas_series_between_inclusive(
+                    series=column_lengths, min_value=min_value, max_value=max_value
                 )
         elif min_value is None and max_value is not None:
             if strict_max:

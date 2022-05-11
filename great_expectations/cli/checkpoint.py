@@ -3,12 +3,13 @@ import sys
 from typing import List
 
 import click
-from ruamel.yaml import YAML
 
 from great_expectations import DataContext
 from great_expectations.checkpoint.types.checkpoint_result import CheckpointResult
 from great_expectations.cli import toolkit
 from great_expectations.cli.pretty_printing import cli_message, cli_message_list
+from great_expectations.core.usage_statistics.events import UsageStatsEvents
+from great_expectations.core.usage_statistics.util import send_usage_message
 from great_expectations.data_context.util import file_relative_path
 from great_expectations.exceptions import InvalidTopLevelConfigKeyError
 from great_expectations.render.renderer.checkpoint_new_notebook_renderer import (
@@ -26,9 +27,6 @@ try:
     from sqlalchemy.exc import SQLAlchemyError
 except ImportError:
     SQLAlchemyError = RuntimeError
-
-yaml = YAML()
-yaml.indent(mapping=2, sequence=4, offset=2)
 
 
 """
@@ -55,7 +53,7 @@ yaml.indent(mapping=2, sequence=4, offset=2)
 
 @click.group(short_help="Checkpoint operations")
 @click.pass_context
-def checkpoint(ctx):
+def checkpoint(ctx: click.Context) -> None:
     """
     Checkpoint operations
 
@@ -68,23 +66,22 @@ def checkpoint(ctx):
     A Checkpoint can be as complex as many batches of data across different
     datasources paired with one or more Expectation Suites each.
     """
-    directory: str = toolkit.parse_cli_config_file_location(
-        config_file_location=ctx.obj.config_file_location
-    ).get("directory")
-    context: DataContext = toolkit.load_data_context_with_error_handling(
-        directory=directory,
-        from_cli_upgrade_command=False,
-    )
-    # TODO consider moving this all the way up in to the CLIState constructor
-    ctx.obj.data_context = context
+    ctx.obj.data_context = ctx.obj.get_data_context_from_config_file()
 
-    usage_stats_prefix = f"cli.checkpoint.{ctx.invoked_subcommand}"
-    toolkit.send_usage_message(
-        data_context=context,
-        event=f"{usage_stats_prefix}.begin",
+    cli_event_noun: str = "checkpoint"
+    (
+        begin_event_name,
+        end_event_name,
+    ) = UsageStatsEvents.get_cli_begin_and_end_event_names(
+        noun=cli_event_noun,
+        verb=ctx.invoked_subcommand,
+    )
+    send_usage_message(
+        data_context=ctx.obj.data_context,
+        event=begin_event_name,
         success=True,
     )
-    ctx.obj.usage_event_end = f"{usage_stats_prefix}.end"
+    ctx.obj.usage_event_end = end_event_name
 
 
 @checkpoint.command(name="new")
@@ -96,7 +93,7 @@ def checkpoint(ctx):
     default=True,
 )
 @click.pass_context
-def checkpoint_new(ctx, name, jupyter):
+def checkpoint_new(ctx: click.Context, name: str, jupyter: bool) -> None:
     """Create a new Checkpoint for easy deployments.
 
     NAME is the name of the Checkpoint to create.
@@ -104,7 +101,7 @@ def checkpoint_new(ctx, name, jupyter):
     _checkpoint_new(ctx=ctx, checkpoint_name=name, jupyter=jupyter)
 
 
-def _checkpoint_new(ctx, checkpoint_name, jupyter):
+def _checkpoint_new(ctx: click.Context, checkpoint_name: str, jupyter: bool) -> None:
 
     context: DataContext = ctx.obj.data_context
     usage_event_end: str = ctx.obj.usage_event_end
@@ -127,7 +124,11 @@ def _checkpoint_new(ctx, checkpoint_name, jupyter):
                 f"To continue editing this Checkpoint, run <green>jupyter notebook {notebook_file_path}</green>"
             )
 
-        toolkit.send_usage_message(context, event=usage_event_end, success=True)
+        send_usage_message(
+            data_context=context,
+            event=usage_event_end,
+            success=True,
+        )
 
         if jupyter:
             cli_message(
@@ -161,7 +162,7 @@ def _verify_checkpoint_does_not_exist(
         )
 
 
-def _get_notebook_path(context, notebook_name):
+def _get_notebook_path(context: DataContext, notebook_name: str) -> str:
     return os.path.abspath(
         os.path.join(
             context.root_directory, context.GE_EDIT_NOTEBOOK_DIR, notebook_name
@@ -171,7 +172,7 @@ def _get_notebook_path(context, notebook_name):
 
 @checkpoint.command(name="list")
 @click.pass_context
-def checkpoint_list(ctx):
+def checkpoint_list(ctx: click.Context) -> None:
     """List configured checkpoints."""
     context: DataContext = ctx.obj.data_context
     usage_event_end: str = ctx.obj.usage_event_end
@@ -182,7 +183,11 @@ def checkpoint_list(ctx):
             "No Checkpoints found.\n"
             "  - Use the command `great_expectations checkpoint new` to create one."
         )
-        toolkit.send_usage_message(context, event=usage_event_end, success=True)
+        send_usage_message(
+            data_context=context,
+            event=usage_event_end,
+            success=True,
+        )
         sys.exit(0)
 
     number_found: int = len(checkpoints)
@@ -190,13 +195,17 @@ def checkpoint_list(ctx):
     message: str = f"Found {number_found} Checkpoint{plural}."
     pretty_list: list = [f" - <cyan>{cp}</cyan>" for cp in checkpoints]
     cli_message_list(pretty_list, list_intro_string=message)
-    toolkit.send_usage_message(context, event=usage_event_end, success=True)
+    send_usage_message(
+        data_context=context,
+        event=usage_event_end,
+        success=True,
+    )
 
 
 @checkpoint.command(name="delete")
 @click.argument("checkpoint")
 @click.pass_context
-def checkpoint_delete(ctx, checkpoint):
+def checkpoint_delete(ctx: click.Context, checkpoint: str) -> None:
     """Delete a Checkpoint."""
     context: DataContext = ctx.obj.data_context
     usage_event_end: str = ctx.obj.usage_event_end
@@ -208,7 +217,11 @@ def checkpoint_delete(ctx, checkpoint):
             usage_event=usage_event_end,
             assume_yes=ctx.obj.assume_yes,
         )
-        toolkit.send_usage_message(context, event=usage_event_end, success=True)
+        send_usage_message(
+            data_context=context,
+            event=usage_event_end,
+            success=True,
+        )
     except Exception as e:
         toolkit.exit_with_failure_message_and_stats(
             data_context=context,
@@ -224,7 +237,7 @@ def checkpoint_delete(ctx, checkpoint):
 @checkpoint.command(name="run")
 @click.argument("checkpoint")
 @click.pass_context
-def checkpoint_run(ctx, checkpoint):
+def checkpoint_run(ctx: click.Context, checkpoint: str) -> None:
     """Run a Checkpoint."""
     context: DataContext = ctx.obj.data_context
     usage_event_end: str = ctx.obj.usage_event_end
@@ -245,12 +258,20 @@ def checkpoint_run(ctx, checkpoint):
 
     if not result["success"]:
         cli_message(string="Validation failed!")
-        toolkit.send_usage_message(context, event=usage_event_end, success=True)
+        send_usage_message(
+            data_context=context,
+            event=usage_event_end,
+            success=True,
+        )
         print_validation_operator_results_details(result=result)
         sys.exit(1)
 
     cli_message("Validation succeeded!")
-    toolkit.send_usage_message(context, event=usage_event_end, success=True)
+    send_usage_message(
+        data_context=context,
+        event=usage_event_end,
+        success=True,
+    )
     print_validation_operator_results_details(result=result)
     sys.exit(0)
 
@@ -279,7 +300,7 @@ def print_validation_operator_results_details(
         suite_name: str = str(vr.meta["expectation_suite_name"])
         if len(suite_name) > max_suite_display_width:
             suite_name = suite_name[0:max_suite_display_width]
-            suite_name = suite_name[:-1] + "…"
+            suite_name = f"{suite_name[:-1]}…"
         status_line: str = f"- {suite_name.ljust(max_suite_display_width)}   {status_slug}   {stats_slug}"
         cli_message(status_line)
 
@@ -287,7 +308,7 @@ def print_validation_operator_results_details(
 @checkpoint.command(name="script")
 @click.argument("checkpoint")
 @click.pass_context
-def checkpoint_script(ctx, checkpoint):
+def checkpoint_script(ctx: click.Context, checkpoint: str) -> None:
     """
     Create a python script to run a Checkpoint.
 
@@ -326,7 +347,11 @@ def checkpoint_script(ctx, checkpoint):
   - The script is located in `great_expectations/uncommitted/run_{checkpoint}.py`
   - The script can be run with `python great_expectations/uncommitted/run_{checkpoint}.py`"""
     )
-    toolkit.send_usage_message(context, event=usage_event_end, success=True)
+    send_usage_message(
+        data_context=context,
+        event=usage_event_end,
+        success=True,
+    )
 
 
 def _write_checkpoint_script_to_disk(

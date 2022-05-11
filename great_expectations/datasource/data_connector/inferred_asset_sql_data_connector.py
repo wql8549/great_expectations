@@ -1,7 +1,9 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
-from great_expectations.datasource.data_connector import ConfiguredAssetSqlDataConnector
 from great_expectations.datasource.data_connector.asset import Asset
+from great_expectations.datasource.data_connector.configured_asset_sql_data_connector import (
+    ConfiguredAssetSqlDataConnector,
+)
 from great_expectations.execution_engine import ExecutionEngine
 
 try:
@@ -21,19 +23,19 @@ class InferredAssetSqlDataConnector(ConfiguredAssetSqlDataConnector):
         name: str,
         datasource_name: str,
         execution_engine: Optional[ExecutionEngine] = None,
-        data_asset_name_prefix: Optional[str] = "",
-        data_asset_name_suffix: Optional[str] = "",
-        include_schema_name: Optional[bool] = False,
+        data_asset_name_prefix: str = "",
+        data_asset_name_suffix: str = "",
+        include_schema_name: bool = False,
         splitter_method: Optional[str] = None,
         splitter_kwargs: Optional[dict] = None,
         sampling_method: Optional[str] = None,
         sampling_kwargs: Optional[dict] = None,
         excluded_tables: Optional[list] = None,
         included_tables: Optional[list] = None,
-        skip_inapplicable_tables: Optional[bool] = True,
+        skip_inapplicable_tables: bool = True,
         introspection_directives: Optional[dict] = None,
         batch_spec_passthrough: Optional[dict] = None,
-    ):
+    ) -> None:
         """
         InferredAssetDataConnector for connecting to data on a SQL database
 
@@ -98,7 +100,7 @@ class InferredAssetSqlDataConnector(ConfiguredAssetSqlDataConnector):
     def assets(self) -> Dict[str, Asset]:
         return self._introspected_assets_cache
 
-    def _refresh_data_references_cache(self):
+    def _refresh_data_references_cache(self) -> None:
         self._refresh_introspected_assets_cache(
             self._data_asset_name_prefix,
             self._data_asset_name_suffix,
@@ -126,19 +128,18 @@ class InferredAssetSqlDataConnector(ConfiguredAssetSqlDataConnector):
         excluded_tables: List = None,
         included_tables: List = None,
         skip_inapplicable_tables: bool = True,
-    ):
+    ) -> None:
         introspected_table_metadata = self._introspect_db(
             **self._introspection_directives
         )
         for metadata in introspected_table_metadata:
             if (excluded_tables is not None) and (
-                metadata["schema_name"] + "." + metadata["table_name"]
-                in excluded_tables
+                f"{metadata['schema_name']}.{metadata['table_name']}" in excluded_tables
             ):
                 continue
 
             if (included_tables is not None) and (
-                metadata["schema_name"] + "." + metadata["table_name"]
+                f"{metadata['schema_name']}.{metadata['table_name']}"
                 not in included_tables
             ):
                 continue
@@ -161,6 +162,7 @@ class InferredAssetSqlDataConnector(ConfiguredAssetSqlDataConnector):
             data_asset_config = {
                 "schema_name": metadata["schema_name"],
                 "table_name": metadata["table_name"],
+                "type": metadata["type"],
             }
             if not splitter_method is None:
                 data_asset_config["splitter_method"] = splitter_method
@@ -224,7 +226,7 @@ class InferredAssetSqlDataConnector(ConfiguredAssetSqlDataConnector):
 
             for table_name in inspector.get_table_names(schema=schema_name):
 
-                if (ignore_information_schemas_and_system_tables) and (
+                if ignore_information_schemas_and_system_tables and (
                     table_name in system_tables
                 ):
                     continue
@@ -240,20 +242,57 @@ class InferredAssetSqlDataConnector(ConfiguredAssetSqlDataConnector):
             # Note Abe 20201112: This logic is currently untested.
             if include_views:
                 # Note: this is not implemented for bigquery
+                try:
+                    view_names = inspector.get_view_names(schema=schema_name)
+                except NotImplementedError:
+                    # Not implemented by Athena dialect
+                    pass
+                else:
+                    for view_name in view_names:
 
-                for view_name in inspector.get_view_names(schema=schema_name):
+                        if ignore_information_schemas_and_system_tables and (
+                            view_name in system_tables
+                        ):
+                            continue
 
-                    if (ignore_information_schemas_and_system_tables) and (
-                        table_name in system_tables
-                    ):
-                        continue
+                        tables.append(
+                            {
+                                "schema_name": schema_name,
+                                "table_name": view_name,
+                                "type": "view",
+                            }
+                        )
 
+        # SQLAlchemy's introspection does not list "external tables" in Redshift Spectrum (tables whose data is stored on S3).
+        # The following code fetches the names of external schemas and tables from a special table
+        # 'svv_external_tables'.
+        try:
+            if "redshift" == engine.dialect.name.lower():
+                result = engine.execute(
+                    "select schemaname, tablename from svv_external_tables"
+                ).fetchall()
+                for row in result:
                     tables.append(
                         {
-                            "schema_name": schema_name,
-                            "table_name": view_name,
-                            "type": "view",
+                            "schema_name": row[0],
+                            "table_name": row[1],
+                            "type": "table",
                         }
                     )
 
+        except Exception as e:
+            # Our testing shows that 'svv_external_tables' table is present in all Redshift clusters. This means that this
+            # exception is highly unlikely to fire.
+            if not "UndefinedTable" in str(e):
+                raise e
+
         return tables
+
+    def get_available_data_asset_names_and_types(self) -> List[Tuple[str, str]]:
+        """
+        Return the list of asset names and types known by this DataConnector.
+
+        Returns:
+            A list of tuples consisting of available names and types
+        """
+        return [(asset["table_name"], asset["type"]) for asset in self.assets.values()]

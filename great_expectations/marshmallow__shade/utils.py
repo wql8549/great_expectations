@@ -253,7 +253,7 @@ def _get_value_for_key(obj, key, default):
         return getattr(obj, key, default)
 
 
-def set_value(dct: typing.Dict[str, typing.Any], key: str, value: typing.Any):
+def set_value(dct: typing.Dict[str, typing.Any], key: str, value: typing.Any) -> None:
     """Set a value in a dict. If `key` contains a '.', it is assumed
     be a path (i.e. dot-delimited string) to the value's location.
 
@@ -269,10 +269,7 @@ def set_value(dct: typing.Dict[str, typing.Any], key: str, value: typing.Any):
         target = dct.setdefault(head, {})
         if not isinstance(target, dict):
             raise ValueError(
-                "Cannot set {key} in {head} "
-                "due to existing value: {target}".format(
-                    key=key, head=head, target=target
-                )
+                f"Cannot set {key} in {head} due to existing value: {target}"
             )
         set_value(target, rest, value)
     else:
@@ -282,7 +279,7 @@ def set_value(dct: typing.Dict[str, typing.Any], key: str, value: typing.Any):
 def callable_or_raise(obj):
     """Check that an object is callable, else raise a :exc:`ValueError`."""
     if not callable(obj):
-        raise ValueError("Object {!r} is not callable.".format(obj))
+        raise ValueError(f"Object {obj!r} is not callable.")
     return obj
 
 

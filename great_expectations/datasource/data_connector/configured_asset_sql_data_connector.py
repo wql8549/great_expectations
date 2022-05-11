@@ -1,6 +1,7 @@
 from copy import deepcopy
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, cast
 
+import great_expectations.exceptions as ge_exceptions
 from great_expectations.core.batch import (
     BatchDefinition,
     BatchRequest,
@@ -12,12 +13,20 @@ from great_expectations.datasource.data_connector.data_connector import DataConn
 from great_expectations.datasource.data_connector.util import (
     batch_definition_matches_batch_request,
 )
-from great_expectations.execution_engine import ExecutionEngine
+from great_expectations.execution_engine import (
+    ExecutionEngine,
+    SqlAlchemyExecutionEngine,
+)
 
 try:
     import sqlalchemy as sa
 except ImportError:
     sa = None
+
+try:
+    from sqlalchemy.sql import Selectable
+except ImportError:
+    Selectable = None
 
 
 class ConfiguredAssetSqlDataConnector(DataConnector):
@@ -39,10 +48,16 @@ class ConfiguredAssetSqlDataConnector(DataConnector):
         execution_engine: Optional[ExecutionEngine] = None,
         assets: Optional[Dict[str, dict]] = None,
         batch_spec_passthrough: Optional[dict] = None,
-    ):
-        if assets is None:
-            assets = {}
-        self._assets = assets
+    ) -> None:
+        self._assets: dict = {}
+        if assets:
+            for asset_name, config in assets.items():
+                self.add_data_asset(asset_name, config)
+
+        if execution_engine:
+            execution_engine: SqlAlchemyExecutionEngine = cast(
+                SqlAlchemyExecutionEngine, execution_engine
+            )
 
         super().__init__(
             name=name,
@@ -55,15 +70,46 @@ class ConfiguredAssetSqlDataConnector(DataConnector):
     def assets(self) -> Dict[str, dict]:
         return self._assets
 
+    @property
+    def execution_engine(self) -> SqlAlchemyExecutionEngine:
+        return cast(SqlAlchemyExecutionEngine, self._execution_engine)
+
     def add_data_asset(
         self,
         name: str,
         config: dict,
-    ):
+    ) -> None:
         """
-        Add data_asset to DataConnector using data_asset name as key, and data_asset configuration as value.
+        Add data_asset to DataConnector using data_asset name as key, and data_asset config as value.
         """
+        name = self._update_data_asset_name_from_config(name, config)
         self._assets[name] = config
+
+    def _update_data_asset_name_from_config(
+        self, data_asset_name: str, data_asset_config: dict
+    ) -> str:
+
+        data_asset_name_prefix: str = data_asset_config.get(
+            "data_asset_name_prefix", ""
+        )
+        data_asset_name_suffix: str = data_asset_config.get(
+            "data_asset_name_suffix", ""
+        )
+        schema_name: str = data_asset_config.get("schema_name", "")
+        include_schema_name: bool = data_asset_config.get("include_schema_name", True)
+        if schema_name and include_schema_name is False:
+            raise ge_exceptions.DataConnectorError(
+                message=f"{self.__class__.__name__} ran into an error while initializing Asset names. Schema {schema_name} was specified, but 'include_schema_name' flag was set to False."
+            )
+
+        if schema_name:
+            data_asset_name: str = f"{schema_name}.{data_asset_name}"
+
+        data_asset_name: str = (
+            f"{data_asset_name_prefix}{data_asset_name}{data_asset_name_suffix}"
+        )
+
+        return data_asset_name
 
     def _get_batch_identifiers_list_from_data_asset_config(
         self,
@@ -76,25 +122,22 @@ class ConfiguredAssetSqlDataConnector(DataConnector):
             table_name = data_asset_name
 
         if "splitter_method" in data_asset_config:
-            splitter_fn = getattr(self, data_asset_config["splitter_method"])
-            split_query = splitter_fn(
-                table_name=table_name, **data_asset_config["splitter_kwargs"]
-            )
 
-            rows = self._execution_engine.engine.execute(split_query).fetchall()
+            splitter_method_name: str = data_asset_config["splitter_method"]
+            splitter_kwargs: dict = data_asset_config["splitter_kwargs"]
 
-            # Zip up split parameters with column names
-            column_names = self._get_column_names_from_splitter_kwargs(
-                data_asset_config["splitter_kwargs"]
+            batch_identifiers_list: List[
+                dict
+            ] = self.execution_engine.get_data_for_batch_identifiers(
+                table_name, splitter_method_name, splitter_kwargs
             )
-            batch_identifiers_list = [dict(zip(column_names, row)) for row in rows]
 
         else:
             batch_identifiers_list = [{}]
 
         return batch_identifiers_list
 
-    def _refresh_data_references_cache(self):
+    def _refresh_data_references_cache(self) -> None:
         self._data_references_cache = {}
 
         for data_asset_name in self.assets:
@@ -109,16 +152,6 @@ class ConfiguredAssetSqlDataConnector(DataConnector):
             # TODO Abe 20201029 : Apply sorters to batch_identifiers_list here
             # TODO Will 20201102 : add sorting code here
             self._data_references_cache[data_asset_name] = batch_identifiers_list
-
-    def _get_column_names_from_splitter_kwargs(self, splitter_kwargs) -> List[str]:
-        column_names: List[str] = []
-
-        if "column_names" in splitter_kwargs:
-            column_names = splitter_kwargs["column_names"]
-        elif "column_name" in splitter_kwargs:
-            column_names = [splitter_kwargs["column_name"]]
-
-        return column_names
 
     def get_available_data_asset_names(self) -> List[str]:
         """
@@ -148,7 +181,7 @@ class ConfiguredAssetSqlDataConnector(DataConnector):
         batch_definition_list: List[BatchDefinition] = []
         try:
             sub_cache = self._data_references_cache[batch_request.data_asset_name]
-        except KeyError as e:
+        except KeyError:
             raise KeyError(
                 f"data_asset_name {batch_request.data_asset_name} is not recognized."
             )
@@ -213,7 +246,7 @@ class ConfiguredAssetSqlDataConnector(DataConnector):
             batch_definition_batch_spec_passthrough = (
                 deepcopy(batch_definition.batch_spec_passthrough) or {}
             )
-            # batch_spec_passthrough from Batch Definition supercedes batch_spec_passthrough from data_asset
+            # batch_spec_passthrough from Batch Definition supersedes batch_spec_passthrough from data_asset
             batch_spec_passthrough.update(batch_definition_batch_spec_passthrough)
             batch_definition.batch_spec_passthrough = batch_spec_passthrough
 
@@ -239,100 +272,30 @@ class ConfiguredAssetSqlDataConnector(DataConnector):
             dict built from batch_definition
         """
         data_asset_name: str = batch_definition.data_asset_name
+        table_name: str = self._get_table_name_from_batch_definition(batch_definition)
         return {
             "data_asset_name": data_asset_name,
-            "table_name": data_asset_name,
+            "table_name": table_name,
             "batch_identifiers": batch_definition.batch_identifiers,
             **self.assets[data_asset_name],
         }
 
-    # Splitter methods for listing partitions
-
-    def _split_on_whole_table(
-        self,
-        table_name: str,
-    ):
+    def _get_table_name_from_batch_definition(
+        self, batch_definition: BatchDefinition
+    ) -> str:
         """
-        'Split' by returning the whole table
+            Helper method called by _get_batch_identifiers_list_from_data_asset_config() to parse table_name from data_asset_name in cases
+            where schema is included.
 
-        Note: the table_name parameter is a required to keep the signature of this method consistent with other methods.
+            data_asset_name in those cases are [schema].[table_name].
+
+        function will split data_asset_name on [schema]. and return the resulting table_name.
         """
+        table_name: str = batch_definition.data_asset_name
+        data_asset_dict: dict = self.assets[batch_definition.data_asset_name]
+        if "schema_name" in data_asset_dict:
+            schema_name_str: str = data_asset_dict["schema_name"]
+            if schema_name_str in table_name:
+                table_name = table_name.split(f"{schema_name_str}.")[1]
 
-        return sa.select([sa.true()])
-
-    def _split_on_column_value(
-        self,
-        table_name: str,
-        column_name: str,
-    ):
-        """Split using the values in the named column"""
-        # query = f"SELECT DISTINCT(\"{self.column_name}\") FROM {self.table_name}"
-
-        return sa.select([sa.func.distinct(sa.column(column_name))]).select_from(
-            sa.text(table_name)
-        )
-
-    def _split_on_converted_datetime(
-        self,
-        table_name: str,
-        column_name: str,
-        date_format_string: str = "%Y-%m-%d",
-    ):
-        """Convert the values in the named column to the given date_format, and split on that"""
-        # query = f"SELECT DISTINCT( strftime(\"{date_format_string}\", \"{self.column_name}\")) as my_var FROM {self.table_name}"
-
-        return sa.select(
-            [
-                sa.func.distinct(
-                    sa.func.strftime(
-                        date_format_string,
-                        sa.column(column_name),
-                    )
-                )
-            ]
-        ).select_from(sa.text(table_name))
-
-    def _split_on_divided_integer(
-        self, table_name: str, column_name: str, divisor: int
-    ):
-        """Divide the values in the named column by `divisor`, and split on that"""
-        # query = f"SELECT DISTINCT(\"{self.column_name}\" / {divisor}) AS my_var FROM {self.table_name}"
-
-        return sa.select(
-            [sa.func.distinct(sa.cast(sa.column(column_name) / divisor, sa.Integer))]
-        ).select_from(sa.text(table_name))
-
-    def _split_on_mod_integer(self, table_name: str, column_name: str, mod: int):
-        """Divide the values in the named column by `divisor`, and split on that"""
-        # query = f"SELECT DISTINCT(\"{self.column_name}\" / {divisor}) AS my_var FROM {self.table_name}"
-
-        return sa.select(
-            [sa.func.distinct(sa.cast(sa.column(column_name) % mod, sa.Integer))]
-        ).select_from(sa.text(table_name))
-
-    def _split_on_multi_column_values(
-        self,
-        table_name: str,
-        column_names: List[str],
-    ):
-        """Split on the joint values in the named columns"""
-        # query = f"SELECT DISTINCT(\"{self.column_name}\") FROM {self.table_name}"
-
-        return (
-            sa.select([sa.column(column_name) for column_name in column_names])
-            .distinct()
-            .select_from(sa.text(table_name))
-        )
-
-    def _split_on_hashed_column(
-        self,
-        table_name: str,
-        column_name: str,
-        hash_digits: int,
-    ):
-        """Note: this method is experimental. It does not work with all SQL dialects."""
-        # query = f"SELECT MD5(\"{self.column_name}\") = {matching_hash}) AS hashed_var FROM {self.table_name}"
-
-        return sa.select([sa.func.md5(sa.column(column_name))]).select_from(
-            sa.text(table_name)
-        )
+        return table_name

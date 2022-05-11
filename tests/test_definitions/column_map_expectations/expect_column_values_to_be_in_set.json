@@ -9,6 +9,7 @@
     "tests" : [
       {
         "title": "basic_positive_test_case_number_set",
+        "include_in_gallery": true,
         "exact_match_out": false,
         "in": {
           "column": "x",
@@ -31,6 +32,7 @@
       },
       {
         "title": "negative_test_case_exclude_existing_column_value",
+        "include_in_gallery": true,
         "exact_match_out": false,
         "in": {
           "column": "x",
@@ -124,7 +126,7 @@
         "column": "z",
         "value_set": ["hello"],
         "catch_exceptions": true,
-       "row_condition": "x == '1'",
+       "row_condition": "x == \"1\"",
         "condition_parser": "pandas"
       },
       "out": {
@@ -176,6 +178,12 @@
         },
         "mssql": {
           "empty_column": "VARCHAR"
+        },
+        "bigquery": {
+          "empty_column": "STRING"
+        },
+        "trino": {
+          "empty_column": "VARCHAR"
         }
       },
       "tests": [{
@@ -210,6 +218,9 @@
       },
       "mssql": {
         "dates": "DATETIME"
+      },
+      "trino": {
+        "dates": "TIMESTAMP"
       }
     },
     "tests" : [
@@ -228,7 +239,7 @@
     },
     {
       "title": "basic_negative_test_case_datetime_set",
-      "suppress_test_for": ["sqlite"],
+      "suppress_test_for": ["sqlite", "bigquery"],
       "exact_match_out": false,
       "in": {
         "column": "dates",
@@ -240,6 +251,22 @@
         "unexpected_index_list": [0],
         "unexpected_list": ["2018-01-01T00:00:00"]
       }
-    }]
+    },
+    {
+      "title": "basic_negative_test_case_datetime_set_bigquery",
+      "only_for": ["bigquery"],
+      "exact_match_out": false,
+      "in": {
+        "column": "dates",
+        "value_set": ["2018-01-02", "2018-01-02 00:34:01"],
+        "parse_strings_as_datetimes": true
+      },
+      "out": {
+        "success": false,
+        "unexpected_index_list": [0],
+        "unexpected_list": ["2018-01-01"]
+      }
+    }
+    ]
   }]
 }

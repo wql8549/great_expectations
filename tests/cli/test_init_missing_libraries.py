@@ -67,7 +67,7 @@ but the package `{library_name}` containing this library is not installed.
     assert os.path.isfile(config_path)
 
     config = yaml.load(open(config_path))
-    assert config["datasources"] == dict()
+    assert config["datasources"] == {}
 
     obs_tree = gen_directory_tree_str(os.path.join(basedir, "great_expectations"))
     assert (
@@ -79,13 +79,6 @@ great_expectations/
     checkpoints/
     expectations/
         .ge_store_backend_id
-    notebooks/
-        pandas/
-            validation_playground.ipynb
-        spark/
-            validation_playground.ipynb
-        sql/
-            validation_playground.ipynb
     plugins/
         custom_data_docs/
             renderers/
@@ -281,13 +274,13 @@ def test_cli_init_spark_without_library_installed_instructs_user(
     assert "What data would you like Great Expectations to connect to" in stdout
     assert "What are you processing your files with" in stdout
     assert (
-        f"""Great Expectations relies on the library `pyspark` to connect to your data, \
+        """Great Expectations relies on the library `pyspark` to connect to your data, \
 but the package `pyspark` containing this library is not installed.
     Would you like Great Expectations to try to execute `pip install pyspark` for you?"""
         in stdout
     )
     assert (
-        f"""\nOK, exiting now.
+        """\nOK, exiting now.
     - Please execute `pip install pyspark` before trying again."""
         in stdout
     )
@@ -306,7 +299,7 @@ but the package `pyspark` containing this library is not installed.
     assert os.path.isfile(config_path)
 
     config = yaml.load(open(config_path))
-    assert config["datasources"] == dict()
+    assert config["datasources"] == {}
 
     obs_tree = gen_directory_tree_str(os.path.join(basedir, "great_expectations"))
     assert (
@@ -318,13 +311,6 @@ great_expectations/
     checkpoints/
     expectations/
         .ge_store_backend_id
-    notebooks/
-        pandas/
-            validation_playground.ipynb
-        spark/
-            validation_playground.ipynb
-        sql/
-            validation_playground.ipynb
     plugins/
         custom_data_docs/
             renderers/

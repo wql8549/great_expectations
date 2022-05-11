@@ -19,6 +19,8 @@ from great_expectations.cli.cli_messages import (
     SECTION_SEPARATOR,
 )
 from great_expectations.cli.pretty_printing import cli_message
+from great_expectations.core.usage_statistics.events import UsageStatsEvents
+from great_expectations.core.usage_statistics.util import send_usage_message
 from great_expectations.exceptions import (
     DataContextError,
     DatasourceInitializationError,
@@ -39,14 +41,14 @@ except ImportError:
     default=True,
 )
 @click.pass_context
-def init(ctx, usage_stats):
+def init(ctx: click.Context, usage_stats: bool) -> None:
     """
     Initialize a new Great Expectations project.
 
     This guided input walks the user through setting up a new project and also
     onboards a new developer in an existing project.
 
-    It scaffolds directories, sets up notebooks, creates a project file, and
+    It scaffolds directories, creates a project file, and
     appends to a `.gitignore` file.
     """
     directory = toolkit.parse_cli_config_file_location(
@@ -80,7 +82,7 @@ def init(ctx, usage_stats):
                         exit(0)
 
         except (DataContextError, DatasourceInitializationError) as e:
-            cli_message("<red>{}</red>".format(e.message))
+            cli_message(f"<red>{e.message}</red>")
             sys.exit(1)
 
         try:
@@ -88,7 +90,7 @@ def init(ctx, usage_stats):
             cli_message(ONBOARDING_COMPLETE)
 
         except DataContextError as e:
-            cli_message("<red>{}</red>".format(e.message))
+            cli_message(f"<red>{e.message}</red>")
             # TODO ensure this is covered by a test
             exit(5)
     else:
@@ -101,12 +103,14 @@ def init(ctx, usage_stats):
             context = DataContext.create(
                 target_directory, usage_statistics_enabled=usage_stats
             )
-            toolkit.send_usage_message(
-                data_context=context, event="cli.init.create", success=True
+            send_usage_message(
+                data_context=context,
+                event=UsageStatsEvents.CLI_INIT_CREATE.value,
+                success=True,
             )
         except DataContextError as e:
             # TODO ensure this is covered by a test
-            cli_message("<red>{}</red>".format(e))
+            cli_message(f"<red>{e}</red>")
 
     cli_message(SECTION_SEPARATOR)
     cli_message(READY_FOR_CUSTOMIZATION)
@@ -114,5 +118,5 @@ def init(ctx, usage_stats):
     sys.exit(0)
 
 
-def _get_full_path_to_ge_dir(target_directory):
+def _get_full_path_to_ge_dir(target_directory: str) -> str:
     return os.path.abspath(os.path.join(target_directory, DataContext.GE_DIR))

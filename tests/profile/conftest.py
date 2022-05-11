@@ -7,11 +7,12 @@ import pytest
 import great_expectations as ge
 from great_expectations.core import ExpectationSuite
 from great_expectations.data_context.util import file_relative_path
+from great_expectations.self_check.util import get_dataset
 
 
 @pytest.fixture
 def titanic_data_context_modular_api(tmp_path_factory, monkeypatch):
-    # Reenable GE_USAGE_STATS
+    # Re-enable GE_USAGE_STATS
     monkeypatch.delenv("GE_USAGE_STATS")
     project_path = str(tmp_path_factory.mktemp("titanic_data_context"))
     context_path = os.path.join(project_path, "great_expectations")
@@ -69,3 +70,48 @@ def get_set_of_columns_and_expectations_from_suite(
     expectations: Set[str] = {i.expectation_type for i in suite.expectations}
 
     return columns, expectations
+
+
+@pytest.fixture
+def non_numeric_low_card_dataset(test_backend):
+    """Provide dataset fixtures that have special values and/or are otherwise useful outside
+    the standard json testing framework"""
+
+    # fmt: off
+    data = {
+        "lowcardnonnum": [
+            "a", "b", "b", "b", "b", "b", "b", "b", "b", "b",
+            "b", "b", "b", "b", "b", "b", "b", "b", "b", "b",
+            "b", "b", "b", "b", "b", "b", "b", "b", "b", "b",
+            "b", "b", "b", "b", "b", "b", "b", "b", "b", "b",
+            "b", "b", "b", "b", "b", "b", "b", "b", "b", "b",
+            "b", "b", "b", "b", "b", "b", "b", "b", "b", "b",
+            "b", "b", "b", "b", "b", "b", "b", "b", "b", "b",
+            "b", "b", "b", "b", "b", "b", "b", "b", "b", "b",
+            "b", "b", "b", "b", "b", "b", "b", "b", "b", "b",
+            "b", "b", "b", "b", "b", "b", "b", "b", "b", "b",
+            "b", "b", "b", "b", "b",
+        ]
+    }
+    # fmt: on
+    schemas = {
+        "pandas": {
+            "lowcardnonnum": "str",
+        },
+        "postgresql": {
+            "lowcardnonnum": "TEXT",
+        },
+        "sqlite": {
+            "lowcardnonnum": "VARCHAR",
+        },
+        "mysql": {
+            "lowcardnonnum": "TEXT",
+        },
+        "mssql": {
+            "lowcardnonnum": "VARCHAR",
+        },
+        "spark": {
+            "lowcardnonnum": "StringType",
+        },
+    }
+    return get_dataset(test_backend, data, schemas=schemas)

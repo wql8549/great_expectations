@@ -12,6 +12,9 @@ import great_expectations as ge
 from great_expectations.self_check.util import expectationSuiteSchema
 
 
+@pytest.mark.filterwarnings(
+    "ignore:partition_data*:DeprecationWarning:great_expectations.dataset.util"
+)
 def test_recursively_convert_to_json_serializable(tmp_path):
     asset = ge.dataset.PandasDataset(
         {
@@ -55,7 +58,7 @@ def test_recursively_convert_to_json_serializable(tmp_path):
         "np.str": np.unicode_(["hello"]),
         "yyy": decimal.Decimal(123.456),
     }
-    if platform.system() != "Windows":
+    if hasattr(np, "float128") and platform.system() != "Windows":
         x["np.float128"] = np.float128([5.999999999998786324399999999, 20.4])
 
     x = ge.data_asset.util.recursively_convert_to_json_serializable(x)
@@ -73,7 +76,7 @@ def test_recursively_convert_to_json_serializable(tmp_path):
 
     assert isinstance(x["np.float32"][0], float)
     assert isinstance(x["np.float64"][0], float)
-    if platform.system() != "Windows":
+    if hasattr(np, "float128") and platform.system() != "Windows":
         assert isinstance(x["np.float128"][0], float)
     # self.assertEqual(type(x['np.complex64'][0]), complex)
     # self.assertEqual(type(x['np.complex128'][0]), complex)
@@ -81,7 +84,7 @@ def test_recursively_convert_to_json_serializable(tmp_path):
     assert isinstance(x["np.float_"][0], float)
 
     # Make sure nothing is going wrong with precision rounding
-    if platform.system() != "Windows":
+    if hasattr(np, "float128") and platform.system() != "Windows":
         assert np.allclose(
             x["np.float128"][0],
             5.999999999998786324399999999,

@@ -2,10 +2,9 @@ import json
 import random
 
 import pytest
-from packaging.version import parse as parse_version
 from ruamel.yaml import YAML
 
-from great_expectations.core.batch import BatchRequest
+from great_expectations.core.batch import Batch, BatchRequest
 from great_expectations.core.batch_spec import SqlAlchemyDatasourceBatchSpec
 from great_expectations.data_context.util import instantiate_class_from_config
 from great_expectations.datasource.data_connector import ConfiguredAssetSqlDataConnector
@@ -14,11 +13,13 @@ try:
     sqlalchemy = pytest.importorskip("sqlalchemy")
 except ImportError:
     sqlalchemy = None
+import great_expectations.exceptions as ge_exceptions
 from great_expectations.validator.validator import Validator
 
-yaml = YAML()
+yaml = YAML(typ="safe")
 
 
+# TODO: <Alex>ALEX -- Some methods in this module are misplaced and/or provide no action; this must be repaired.</Alex>
 def test_basic_self_check(test_cases_for_sql_data_connector_sqlite_execution_engine):
     random.seed(0)
     execution_engine = test_cases_for_sql_data_connector_sqlite_execution_engine
@@ -73,20 +74,22 @@ def test_basic_self_check(test_cases_for_sql_data_connector_sqlite_execution_eng
     }
 
 
+@pytest.mark.parametrize("splitter_method_name_prefix", ["_", ""])
 def test_get_batch_definition_list_from_batch_request(
+    splitter_method_name_prefix,
     test_cases_for_sql_data_connector_sqlite_execution_engine,
 ):
     random.seed(0)
     db = test_cases_for_sql_data_connector_sqlite_execution_engine
 
     config = yaml.load(
-        """
+        f"""
     name: my_sql_data_connector
     datasource_name: FAKE_Datasource_NAME
 
     assets:
         table_partitioned_by_date_column__A:
-            splitter_method: _split_on_column_value
+            splitter_method: {splitter_method_name_prefix}split_on_column_value
             splitter_kwargs:
                 column_name: date
 
@@ -153,6 +156,7 @@ def test_get_batch_definition_list_from_batch_request(
     assert len(batch_definition_list) == 30
 
     with pytest.raises(TypeError):
+        # noinspection PyArgumentList
         my_data_connector.get_batch_definition_list_from_batch_request(
             batch_request=BatchRequest(
                 datasource_name="FAKE_Datasource_NAME",
@@ -161,11 +165,13 @@ def test_get_batch_definition_list_from_batch_request(
         )
 
     with pytest.raises(TypeError):
+        # noinspection PyArgumentList
         my_data_connector.get_batch_definition_list_from_batch_request(
             batch_request=BatchRequest(datasource_name="FAKE_Datasource_NAME")
         )
 
     with pytest.raises(TypeError):
+        # noinspection PyArgumentList
         my_data_connector.get_batch_definition_list_from_batch_request(
             batch_request=BatchRequest()
         )
@@ -225,18 +231,22 @@ def test_example_A(test_cases_for_sql_data_connector_sqlite_execution_engine):
     }
 
 
-def test_example_B(test_cases_for_sql_data_connector_sqlite_execution_engine):
+@pytest.mark.parametrize("splitter_method_name_prefix", ["_", ""])
+def test_example_B(
+    splitter_method_name_prefix,
+    test_cases_for_sql_data_connector_sqlite_execution_engine,
+):
     random.seed(0)
     db = test_cases_for_sql_data_connector_sqlite_execution_engine
 
     config = yaml.load(
-        """
+        f"""
     name: my_sql_data_connector
     datasource_name: FAKE_Datasource_NAME
 
     assets:
         table_partitioned_by_timestamp_column__B:
-            splitter_method: _split_on_converted_datetime
+            splitter_method: {splitter_method_name_prefix}split_on_converted_datetime
             splitter_kwargs:
                 column_name: timestamp
     """
@@ -278,18 +288,22 @@ def test_example_B(test_cases_for_sql_data_connector_sqlite_execution_engine):
     }
 
 
-def test_example_C(test_cases_for_sql_data_connector_sqlite_execution_engine):
+@pytest.mark.parametrize("splitter_method_name_prefix", ["_", ""])
+def test_example_C(
+    splitter_method_name_prefix,
+    test_cases_for_sql_data_connector_sqlite_execution_engine,
+):
     random.seed(0)
     db = test_cases_for_sql_data_connector_sqlite_execution_engine
 
     config = yaml.load(
-        """
+        f"""
     name: my_sql_data_connector
     datasource_name: FAKE_Datasource_NAME
 
     assets:
         table_partitioned_by_regularly_spaced_incrementing_id_column__C:
-            splitter_method: _split_on_divided_integer
+            splitter_method: {splitter_method_name_prefix}split_on_divided_integer
             splitter_kwargs:
                 column_name: id
                 divisor: 10
@@ -419,8 +433,8 @@ def test_example_F(test_cases_for_sql_data_connector_sqlite_execution_engine):
                 "batch_definition_count": 49,
                 # TODO Abe 20201029 : These values should be sorted
                 "example_data_references": [
-                    {"session_id": 3},
                     {"session_id": 2},
+                    {"session_id": 3},
                     {"session_id": 4},
                 ],
             }
@@ -441,18 +455,22 @@ def test_example_F(test_cases_for_sql_data_connector_sqlite_execution_engine):
     }
 
 
-def test_example_G(test_cases_for_sql_data_connector_sqlite_execution_engine):
+@pytest.mark.parametrize("splitter_method_name_prefix", ["_", ""])
+def test_example_G(
+    splitter_method_name_prefix,
+    test_cases_for_sql_data_connector_sqlite_execution_engine,
+):
     random.seed(0)
     db = test_cases_for_sql_data_connector_sqlite_execution_engine
 
     config = yaml.load(
-        """
+        f"""
     name: my_sql_data_connector
     datasource_name: FAKE_Datasource_NAME
 
     assets:
         table_partitioned_by_multiple_columns__G:
-            splitter_method: _split_on_multi_column_values
+            splitter_method: {splitter_method_name_prefix}split_on_multi_column_values
             splitter_kwargs:
                 column_names:
                     - y
@@ -550,12 +568,14 @@ def test_example_H(test_cases_for_sql_data_connector_sqlite_execution_engine):
     # }
 
 
-#  'table_partitioned_by_irregularly_spaced_incrementing_id_with_spacing_in_a_second_table__D',
+#  ['table_partitioned_by_irregularly_spaced_incrementing_id_with_spacing_in_a_second_table__D',
 #  'table_containing_id_spacers_for_D',
 #  'table_that_should_be_partitioned_by_random_hash__H']
 
 
+@pytest.mark.parametrize("sampler_method_name_prefix", ["_", ""])
 def test_sampling_method__limit(
+    sampler_method_name_prefix,
     test_cases_for_sql_data_connector_sqlite_execution_engine,
 ):
     execution_engine = test_cases_for_sql_data_connector_sqlite_execution_engine
@@ -567,28 +587,30 @@ def test_sampling_method__limit(
                 "batch_identifiers": {},
                 "splitter_method": "_split_on_whole_table",
                 "splitter_kwargs": {},
-                "sampling_method": "_sample_using_limit",
+                "sampling_method": f"{sampler_method_name_prefix}sample_using_limit",
                 "sampling_kwargs": {"n": 20},
             }
         )
     )
-    execution_engine.load_batch_data("__", batch_data)
-    validator = Validator(execution_engine)
+
+    batch = Batch(data=batch_data)
+
+    validator = Validator(execution_engine, batches=[batch])
     assert len(validator.head(fetch_all=True)) == 20
 
-    assert (
-        validator.expect_column_values_to_be_in_set(
-            "date", value_set=["2020-01-02"]
-        ).success
-        == False
-    )
+    assert not validator.expect_column_values_to_be_in_set(
+        "date", value_set=["2020-01-02"]
+    ).success
 
 
+@pytest.mark.parametrize("sampler_method_name_prefix", ["_", ""])
 def test_sampling_method__random(
+    sampler_method_name_prefix,
     test_cases_for_sql_data_connector_sqlite_execution_engine,
 ):
     execution_engine = test_cases_for_sql_data_connector_sqlite_execution_engine
 
+    # noinspection PyUnusedLocal
     batch_data, batch_markers = execution_engine.get_batch_data_and_markers(
         batch_spec=SqlAlchemyDatasourceBatchSpec(
             {
@@ -596,7 +618,7 @@ def test_sampling_method__random(
                 "batch_identifiers": {},
                 "splitter_method": "_split_on_whole_table",
                 "splitter_kwargs": {},
-                "sampling_method": "_sample_using_random",
+                "sampling_method": f"{sampler_method_name_prefix}sample_using_random",
                 "sampling_kwargs": {"p": 1.0},
             }
         )
@@ -607,7 +629,9 @@ def test_sampling_method__random(
     pass
 
 
+@pytest.mark.parametrize("sampler_method_name_prefix", ["_", ""])
 def test_sampling_method__mod(
+    sampler_method_name_prefix,
     test_cases_for_sql_data_connector_sqlite_execution_engine,
 ):
     execution_engine = test_cases_for_sql_data_connector_sqlite_execution_engine
@@ -619,7 +643,7 @@ def test_sampling_method__mod(
                 "batch_identifiers": {},
                 "splitter_method": "_split_on_whole_table",
                 "splitter_kwargs": {},
-                "sampling_method": "_sample_using_mod",
+                "sampling_method": f"{sampler_method_name_prefix}sample_using_mod",
                 "sampling_kwargs": {
                     "column_name": "id",
                     "mod": 10,
@@ -633,7 +657,9 @@ def test_sampling_method__mod(
     assert len(validator.head(fetch_all=True)) == 12
 
 
+@pytest.mark.parametrize("sampler_method_name_prefix", ["_", ""])
 def test_sampling_method__a_list(
+    sampler_method_name_prefix,
     test_cases_for_sql_data_connector_sqlite_execution_engine,
 ):
     execution_engine = test_cases_for_sql_data_connector_sqlite_execution_engine
@@ -645,7 +671,7 @@ def test_sampling_method__a_list(
                 "batch_identifiers": {},
                 "splitter_method": "_split_on_whole_table",
                 "splitter_kwargs": {},
-                "sampling_method": "_sample_using_a_list",
+                "sampling_method": f"{sampler_method_name_prefix}sample_using_a_list",
                 "sampling_kwargs": {
                     "column_name": "id",
                     "value_list": [10, 20, 30, 40],
@@ -661,6 +687,7 @@ def test_sampling_method__a_list(
 def test_sampling_method__md5(
     test_cases_for_sql_data_connector_sqlite_execution_engine,
 ):
+    # noinspection PyUnusedLocal
     execution_engine = test_cases_for_sql_data_connector_sqlite_execution_engine
 
     # SQlite doesn't support MD5
@@ -1059,7 +1086,9 @@ def test_basic_instantiation_of_ConfiguredAssetSqlDataConnector(
     }
 
 
+@pytest.mark.parametrize("splitter_method_name_prefix", ["_", ""])
 def test_more_complex_instantiation_of_ConfiguredAssetSqlDataConnector(
+    splitter_method_name_prefix,
     test_cases_for_sql_data_connector_sqlite_execution_engine,
 ):
     my_data_connector = instantiate_class_from_config(
@@ -1068,7 +1097,7 @@ def test_more_complex_instantiation_of_ConfiguredAssetSqlDataConnector(
             "name": "my_sql_data_connector",
             "assets": {
                 "main.table_partitioned_by_date_column__A": {
-                    "splitter_method": "_split_on_column_value",
+                    "splitter_method": f"{splitter_method_name_prefix}split_on_column_value",
                     "splitter_kwargs": {"column_name": "date"},
                 },
             },
@@ -1097,6 +1126,96 @@ def test_more_complex_instantiation_of_ConfiguredAssetSqlDataConnector(
         "unmatched_data_reference_count": 0,
         "example_unmatched_data_references": [],
     }
+
+
+@pytest.mark.parametrize("splitter_method_name_prefix", ["_", ""])
+def test_more_complex_instantiation_of_ConfiguredAssetSqlDataConnector_include_schema_name(
+    splitter_method_name_prefix,
+    test_cases_for_sql_data_connector_sqlite_execution_engine,
+):
+    my_data_connector: ConfiguredAssetSqlDataConnector = ConfiguredAssetSqlDataConnector(
+        name="my_sql_data_connector",
+        datasource_name="my_test_datasource",
+        execution_engine="test_cases_for_sql_data_connector_sqlite_execution_engine",
+        assets={
+            "table_partitioned_by_date_column__A": {
+                "splitter_method": f"{splitter_method_name_prefix}split_on_column_value",
+                "splitter_kwargs": {"column_name": "date"},
+                "include_schema_name": True,
+                "schema_name": "main",
+            },
+        },
+    )
+    assert "main.table_partitioned_by_date_column__A" in my_data_connector.assets
+
+    # schema_name given but include_schema_name is set to False
+    with pytest.raises(ge_exceptions.DataConnectorError) as e:
+        ConfiguredAssetSqlDataConnector(
+            name="my_sql_data_connector",
+            datasource_name="my_test_datasource",
+            execution_engine="test_cases_for_sql_data_connector_sqlite_execution_engine",
+            assets={
+                "table_partitioned_by_date_column__A": {
+                    "splitter_method": f"{splitter_method_name_prefix}split_on_column_value",
+                    "splitter_kwargs": {"column_name": "date"},
+                    "include_schema_name": False,
+                    "schema_name": "main",
+                },
+            },
+        )
+
+    assert (
+        e.value.message
+        == "ConfiguredAssetSqlDataConnector ran into an error while initializing Asset names. Schema main was specified, but 'include_schema_name' flag was set to False."
+    )
+
+
+@pytest.mark.parametrize("splitter_method_name_prefix", ["_", ""])
+def test_more_complex_instantiation_of_ConfiguredAssetSqlDataConnector_include_schema_name_prefix_suffix(
+    splitter_method_name_prefix,
+    test_cases_for_sql_data_connector_sqlite_execution_engine,
+):
+    my_data_connector: ConfiguredAssetSqlDataConnector = ConfiguredAssetSqlDataConnector(
+        name="my_sql_data_connector",
+        datasource_name="my_test_datasource",
+        execution_engine="test_cases_for_sql_data_connector_sqlite_execution_engine",
+        assets={
+            "table_partitioned_by_date_column__A": {
+                "splitter_method": f"{splitter_method_name_prefix}split_on_column_value",
+                "splitter_kwargs": {"column_name": "date"},
+                "include_schema_name": True,
+                "schema_name": "main",
+                "data_asset_name_prefix": "taxi__",
+                "data_asset_name_suffix": "__asset",
+            },
+        },
+    )
+    assert (
+        "taxi__main.table_partitioned_by_date_column__A__asset"
+        in my_data_connector.assets
+    )
+
+    # schema_name provided, but include_schema_name is set to False
+    with pytest.raises(ge_exceptions.DataConnectorError) as e:
+        ConfiguredAssetSqlDataConnector(
+            name="my_sql_data_connector",
+            datasource_name="my_test_datasource",
+            execution_engine="test_cases_for_sql_data_connector_sqlite_execution_engine",
+            assets={
+                "table_partitioned_by_date_column__A": {
+                    "splitter_method": f"{splitter_method_name_prefix}split_on_column_value",
+                    "splitter_kwargs": {"column_name": "date"},
+                    "include_schema_name": False,
+                    "schema_name": "main",
+                    "data_asset_name_prefix": "taxi__",
+                    "data_asset_name_suffix": "__asset",
+                },
+            },
+        )
+    assert (
+        e.value.message
+        == "ConfiguredAssetSqlDataConnector ran into an error while initializing Asset names. Schema main was specified, but 'include_schema_name' flag was set to False."
+    )
 
 
 # TODO

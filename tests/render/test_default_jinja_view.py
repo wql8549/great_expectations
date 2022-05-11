@@ -4,7 +4,6 @@ from collections import OrderedDict
 import pytest
 
 import great_expectations as ge
-import great_expectations.render as render
 from great_expectations.core.expectation_validation_result import (
     ExpectationSuiteValidationResult,
 )
@@ -37,6 +36,9 @@ def expectations():
 # noinspection PyPep8Naming
 @pytest.mark.smoketest
 @pytest.mark.rendered_output
+@pytest.mark.filterwarnings(
+    "ignore:Cannot get %*::great_expectations.render.renderer.profiling_results_overview_section_renderer"
+)
 def test_render_DefaultJinjaPageView_meta_info():
     validation_results = ExpectationSuiteValidationResult(
         **{
@@ -64,7 +66,7 @@ def test_render_DefaultJinjaPageView_meta_info():
     html = DefaultJinjaPageView().render(document)
     with open(
         file_relative_path(
-            __file__, "./output/test_render_DefaultJinjaPageView_meta_info.html)"
+            __file__, "./output/test_render_DefaultJinjaPageView_meta_info.html"
         ),
         "w",
     ) as outfile:

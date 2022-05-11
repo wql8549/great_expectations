@@ -1,3 +1,6 @@
+import enum
+from dataclasses import dataclass
+
 from pyparsing import (
     CaselessLiteral,
     Combine,
@@ -8,10 +11,9 @@ from pyparsing import (
     Word,
     alphanums,
     alphas,
-    oneOf,
 )
 
-from great_expectations.exceptions import GreatExpectationsError
+import great_expectations.exceptions as ge_exceptions
 
 try:
     import pyspark.sql.functions as F
@@ -24,13 +26,13 @@ except ImportError:
     sa = None
 
 
-def _set_notnull(s, l, t):
+def _set_notnull(s, l, t) -> None:
     t["notnull"] = True
 
 
 column_name = Combine(
     Suppress(Literal('col("'))
-    + Word(alphas, alphanums + "_.").setResultsName("column")
+    + Word(alphas, f"{alphanums}_.").setResultsName("column")
     + Suppress(Literal('")'))
 )
 gt = Literal(">")
@@ -40,9 +42,9 @@ le = Literal("<=")
 eq = Literal("==")
 ops = (gt ^ lt ^ ge ^ le ^ eq).setResultsName("op")
 fnumber = Regex(r"[+-]?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?").setResultsName("fnumber")
-condition_value = Suppress('"') + Word(alphanums + ".").setResultsName(
+condition_value = Suppress('"') + Word(f"{alphanums}.").setResultsName(
     "condition_value"
-) + Suppress('"') ^ Suppress("'") + Word(alphanums + ".").setResultsName(
+) + Suppress('"') ^ Suppress("'") + Word(f"{alphanums}.").setResultsName(
     "condition_value"
 ) + Suppress(
     "'"
@@ -53,8 +55,38 @@ condition = (column_name + not_null).setParseAction(_set_notnull) ^ (
 )
 
 
-class ConditionParserError(GreatExpectationsError):
+class ConditionParserError(ge_exceptions.GreatExpectationsError):
     pass
+
+
+class RowConditionParserType(enum.Enum):
+    """Type of condition or parser to be used to interpret a RowCondition
+
+    Note that many of these are forward looking and are not yet implemented.
+    In the future `GE` can replace the `great_expectations__experimental__`
+    name for the condition_parser and this enum can be used internally
+    instead of strings for the condition_parser user input.
+    """
+
+    GE = "ge"  # GE intermediate language
+    SPARK = "spark"  # Spark pyspark.sql.Column type
+    SPARK_SQL = "spark_sql"  # String type
+    PANDAS = "pandas"  # pandas parser for pandas DataFrame.query()
+    PYTHON = "python"  # python parser for DataFrame.query()
+    SQL = "sql"  # Selectable type
+
+
+@dataclass
+class RowCondition:
+    """Condition that can be used to filter rows in a data set.
+
+    Attributes:
+        condition: String of the condition
+        condition_type: Format of the condition e.g. for parsing
+    """
+
+    condition: str
+    condition_type: RowConditionParserType
 
 
 def _parse_great_expectations_condition(row_condition: str):
@@ -64,6 +96,7 @@ def _parse_great_expectations_condition(row_condition: str):
         raise ConditionParserError(f"unable to parse condition: {row_condition}")
 
 
+# noinspection PyUnresolvedReferences
 def parse_condition_to_spark(row_condition: str) -> "pyspark.sql.Column":
     parsed = _parse_great_expectations_condition(row_condition)
     column = parsed["column"]

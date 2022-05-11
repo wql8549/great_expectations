@@ -1,6 +1,9 @@
 import copy
 import logging
 
+from great_expectations.datasource.data_connector.configured_asset_sql_data_connector import (
+    ConfiguredAssetSqlDataConnector,
+)
 from great_expectations.datasource.new_datasource import BaseDatasource
 
 logger = logging.getLogger(__name__)
@@ -21,7 +24,8 @@ class SimpleSqlalchemyDatasource(BaseDatasource):
         engine=None,  # sqlalchemy.engine.Engine
         introspection: dict = None,
         tables: dict = None,
-    ):
+        **kwargs
+    ) -> None:
         introspection = introspection or {}
         tables = tables or {}
 
@@ -32,6 +36,8 @@ class SimpleSqlalchemyDatasource(BaseDatasource):
             "credentials": credentials,
             "engine": engine,
         }
+
+        self._execution_engine_config.update(**kwargs)
 
         super().__init__(name=name, execution_engine=self._execution_engine_config)
 
@@ -45,16 +51,16 @@ class SimpleSqlalchemyDatasource(BaseDatasource):
         self._datasource_config = {}
 
     # noinspection PyMethodOverriding
-    # Note: This method is meant to overwrite Datasource._init_data_connectors (dispite signature mismatch).
+    # Note: This method is meant to overwrite Datasource._init_data_connectors (despite signature mismatch).
     def _init_data_connectors(
         self,
         introspection_configs: dict,
         table_configs: dict,
-    ):
+    ) -> None:
 
-        # First, build DataConnectors for introspected assets
+        # Step-1: Build DataConnectors for introspected assets
         for name, config in introspection_configs.items():
-            data_connector_config = dict(
+            data_connector_config: dict = dict(
                 **{
                     "class_name": "InferredAssetSqlDataConnector",
                     "name": name,
@@ -66,15 +72,15 @@ class SimpleSqlalchemyDatasource(BaseDatasource):
                 data_connector_config,
             )
 
-        # Second, build DataConnectors for tables. They will map to configured assets
+        # Step-2: Build DataConnectors for tables. They will map to configured assets
         for table_name, table_config in table_configs.items():
             for partitioner_name, partitioner_config in table_config[
                 "partitioners"
             ].items():
 
-                data_connector_name = partitioner_name
+                data_connector_name: str = partitioner_name
                 if data_connector_name not in self.data_connectors:
-                    data_connector_config = {
+                    data_connector_config: dict = {
                         "class_name": "ConfiguredAssetSqlDataConnector",
                         "assets": {},
                     }
@@ -82,21 +88,16 @@ class SimpleSqlalchemyDatasource(BaseDatasource):
                         data_connector_name, data_connector_config
                     )
 
-                data_connector = self.data_connectors[data_connector_name]
+                data_connector: ConfiguredAssetSqlDataConnector = self.data_connectors[
+                    data_connector_name
+                ]
 
-                data_asset_config = copy.deepcopy(partitioner_config)
+                data_asset_config: dict = copy.deepcopy(partitioner_config)
                 data_asset_config["table_name"] = table_name
+                data_asset_name: str = table_name
 
-                data_asset_name_prefix = data_asset_config.pop(
-                    "data_asset_name_prefix", ""
-                )
-                data_asset_name_suffix = data_asset_config.pop(
-                    "data_asset_name_suffix", ""
-                )
-                data_asset_name = (
-                    data_asset_name_prefix + table_name + data_asset_name_suffix
-                )
-
+                # If config contains any prefix, suffix or schema_name values,
+                # they will be handled at the ConfiguredAssetSqlDataConnector-level
                 data_connector.add_data_asset(
                     data_asset_name,
                     data_asset_config,

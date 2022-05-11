@@ -8,7 +8,7 @@ from great_expectations.datasource.batch_kwargs_generator.batch_kwargs_generator
 logger = logging.getLogger(__name__)
 
 try:
-    from pyspark.sql import SparkSession
+    from pyspark.sql import SparkSession  # noqa: F401
 except ImportError:
     logger.debug(
         "Unable to load spark context; install optional spark dependency for support."
@@ -18,7 +18,7 @@ except ImportError:
 class DatabricksTableBatchKwargsGenerator(BatchKwargsGenerator):
     """Meant to be used in a Databricks notebook"""
 
-    def __init__(self, name="default", datasource=None, database="default"):
+    def __init__(self, name="default", datasource=None, database="default") -> None:
         super().__init__(name, datasource=datasource)
         self.database = database
         try:
@@ -34,11 +34,11 @@ class DatabricksTableBatchKwargsGenerator(BatchKwargsGenerator):
             logger.warning("No sparkSession available to query for tables.")
             return {"names": []}
 
-        tables = self.spark.sql("show tables in {}".format(self.database))
+        tables = self.spark.sql(f"show tables in {self.database}")
         return {"names": [(row.tableName, "table") for row in tables.collect()]}
 
     def _get_iterator(self, data_asset_name, **kwargs):
-        query = "select * from {}.{}".format(self.database, data_asset_name)
+        query = f"select * from {self.database}.{data_asset_name}"
         if kwargs.get("partition"):
             if not kwargs.get("date_field"):
                 raise Exception("Must specify date_field when using partition.")

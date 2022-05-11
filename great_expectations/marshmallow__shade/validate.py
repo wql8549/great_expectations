@@ -21,7 +21,7 @@ class Validator:
 
     def __repr__(self) -> str:
         args = self._repr_args()
-        args = "{}, ".format(args) if args else ""
+        args = f"{args}, " if args else ""
 
         return "<{self.__class__.__name__}({args}error={self.error!r})>".format(
             self=self, args=args
@@ -46,7 +46,7 @@ class URL(Validator):
     """
 
     class RegexMemoizer:
-        def __init__(self):
+        def __init__(self) -> None:
             self._memoized = {}
 
         def _regex_generator(self, relative: bool, require_tld: bool):
@@ -95,15 +95,15 @@ class URL(Validator):
         relative: bool = False,
         schemes: types.StrSequenceOrSet = None,
         require_tld: bool = True,
-        error: str = None
-    ):
+        error: str = None,
+    ) -> None:
         self.relative = relative
         self.error = error or self.default_message  # type: str
         self.schemes = schemes or self.default_schemes
         self.require_tld = require_tld
 
     def _repr_args(self) -> str:
-        return "relative={!r}".format(self.relative)
+        return f"relative={self.relative!r}"
 
     def _format_error(self, value) -> str:
         return self.error.format(input=value)
@@ -156,7 +156,7 @@ class Email(Validator):
 
     default_message = "Not a valid email address."
 
-    def __init__(self, *, error: str = None):
+    def __init__(self, *, error: str = None) -> None:
         self.error = error or self.default_message  # type: str
 
     def _format_error(self, value) -> typing.Any:
@@ -222,8 +222,8 @@ class Range(Validator):
         *,
         min_inclusive: bool = True,
         max_inclusive: bool = True,
-        error: str = None
-    ):
+        error: str = None,
+    ) -> None:
         self.min = min
         self.max = max
         self.error = error
@@ -288,7 +288,7 @@ class Length(Validator):
 
     def __init__(
         self, min: int = None, max: int = None, *, equal: int = None, error: str = None
-    ):
+    ) -> None:
         if equal is not None and any([min, max]):
             raise ValueError(
                 "The `equal` parameter was provided, maximum or "
@@ -301,7 +301,7 @@ class Length(Validator):
         self.equal = equal
 
     def _repr_args(self) -> str:
-        return "min={!r}, max={!r}, equal={!r}".format(self.min, self.max, self.equal)
+        return f"min={self.min!r}, max={self.max!r}, equal={self.equal!r}"
 
     def _format_error(self, value, message: str) -> str:
         return (self.error or message).format(
@@ -338,12 +338,12 @@ class Equal(Validator):
 
     default_message = "Must be equal to {other}."
 
-    def __init__(self, comparable, *, error: str = None):
+    def __init__(self, comparable, *, error: str = None) -> None:
         self.comparable = comparable
         self.error = error or self.default_message  # type: str
 
     def _repr_args(self) -> str:
-        return "comparable={!r}".format(self.comparable)
+        return f"comparable={self.comparable!r}"
 
     def _format_error(self, value) -> str:
         return self.error.format(input=value, other=self.comparable)
@@ -376,15 +376,15 @@ class Regexp(Validator):
         regex: typing.Union[str, bytes, typing.Pattern],
         flags=0,
         *,
-        error: str = None
-    ):
+        error: str = None,
+    ) -> None:
         self.regex = (
             re.compile(regex, flags) if isinstance(regex, (str, bytes)) else regex
         )
         self.error = error or self.default_message  # type: str
 
     def _repr_args(self) -> str:
-        return "regex={!r}".format(self.regex)
+        return f"regex={self.regex!r}"
 
     def _format_error(self, value) -> str:
         return self.error.format(input=value, regex=self.regex.pattern)
@@ -410,13 +410,13 @@ class Predicate(Validator):
 
     default_message = "Invalid input."
 
-    def __init__(self, method: str, *, error: str = None, **kwargs):
+    def __init__(self, method: str, *, error: str = None, **kwargs) -> None:
         self.method = method
         self.error = error or self.default_message  # type: str
         self.kwargs = kwargs
 
     def _repr_args(self) -> str:
-        return "method={!r}, kwargs={!r}".format(self.method, self.kwargs)
+        return f"method={self.method!r}, kwargs={self.kwargs!r}"
 
     def _format_error(self, value) -> str:
         return self.error.format(input=value, method=self.method)
@@ -440,13 +440,13 @@ class NoneOf(Validator):
 
     default_message = "Invalid input."
 
-    def __init__(self, iterable: typing.Iterable, *, error: str = None):
+    def __init__(self, iterable: typing.Iterable, *, error: str = None) -> None:
         self.iterable = iterable
         self.values_text = ", ".join(str(each) for each in self.iterable)
         self.error = error or self.default_message  # type: str
 
     def _repr_args(self) -> str:
-        return "iterable={!r}".format(self.iterable)
+        return f"iterable={self.iterable!r}"
 
     def _format_error(self, value) -> str:
         return self.error.format(input=value, values=self.values_text)
@@ -477,8 +477,8 @@ class OneOf(Validator):
         choices: typing.Iterable,
         labels: typing.Iterable[str] = None,
         *,
-        error: str = None
-    ):
+        error: str = None,
+    ) -> None:
         self.choices = choices
         self.choices_text = ", ".join(str(choice) for choice in self.choices)
         self.labels = labels if labels is not None else []
@@ -486,7 +486,7 @@ class OneOf(Validator):
         self.error = error or self.default_message  # type: str
 
     def _repr_args(self) -> str:
-        return "choices={!r}, labels={!r}".format(self.choices, self.labels)
+        return f"choices={self.choices!r}, labels={self.labels!r}"
 
     def _format_error(self, value) -> str:
         return self.error.format(

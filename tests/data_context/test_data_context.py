@@ -8,10 +8,13 @@ import pytest
 from freezegun import freeze_time
 from ruamel.yaml import YAML
 
+import great_expectations as ge
 import great_expectations.exceptions as ge_exceptions
-from great_expectations.checkpoint import Checkpoint
+from great_expectations.checkpoint import Checkpoint, SimpleCheckpoint
 from great_expectations.checkpoint.types.checkpoint_result import CheckpointResult
 from great_expectations.core import ExpectationConfiguration, expectationSuiteSchema
+from great_expectations.core.batch import RuntimeBatchRequest
+from great_expectations.core.config_peer import ConfigOutputModes
 from great_expectations.core.expectation_suite import ExpectationSuite
 from great_expectations.core.run_identifier import RunIdentifier
 from great_expectations.data_context import (
@@ -29,7 +32,7 @@ from great_expectations.data_context.types.resource_identifiers import (
     ConfigurationIdentifier,
     ExpectationSuiteIdentifier,
 )
-from great_expectations.data_context.util import file_relative_path
+from great_expectations.data_context.util import PasswordMasker, file_relative_path
 from great_expectations.dataset import Dataset
 from great_expectations.datasource import (
     Datasource,
@@ -37,7 +40,11 @@ from great_expectations.datasource import (
     SimpleSqlalchemyDatasource,
 )
 from great_expectations.datasource.types.batch_kwargs import PathBatchKwargs
-from great_expectations.util import gen_directory_tree_str
+from great_expectations.util import (
+    deep_filter_properties_iterable,
+    gen_directory_tree_str,
+    is_library_loadable,
+)
 from tests.test_utils import create_files_in_directory, safe_remove
 
 try:
@@ -46,6 +53,8 @@ except ImportError:
     from unittest import mock
 
 yaml = YAML()
+
+parameterized_expectation_suite_name = "my_dag_node.default"
 
 
 @pytest.fixture()
@@ -58,6 +67,62 @@ def parameterized_expectation_suite():
         fixture_path,
     ) as suite:
         return json.load(suite)
+
+
+@pytest.fixture(scope="function")
+def titanic_multibatch_data_context(
+    tmp_path,
+) -> DataContext:
+    """
+    Based on titanic_data_context, but with 2 identical batches of
+    data asset "titanic"
+    """
+    project_path = tmp_path / "titanic_data_context"
+    project_path.mkdir()
+    project_path = str(project_path)
+    context_path = os.path.join(project_path, "great_expectations")
+    os.makedirs(os.path.join(context_path, "expectations"), exist_ok=True)
+    data_path = os.path.join(context_path, "..", "data", "titanic")
+    os.makedirs(os.path.join(data_path), exist_ok=True)
+    shutil.copy(
+        file_relative_path(__file__, "../test_fixtures/great_expectations_titanic.yml"),
+        str(os.path.join(context_path, "great_expectations.yml")),
+    )
+    shutil.copy(
+        file_relative_path(__file__, "../test_sets/Titanic.csv"),
+        str(os.path.join(context_path, "..", "data", "titanic", "Titanic_1911.csv")),
+    )
+    shutil.copy(
+        file_relative_path(__file__, "../test_sets/Titanic.csv"),
+        str(os.path.join(context_path, "..", "data", "titanic", "Titanic_1912.csv")),
+    )
+    return ge.data_context.DataContext(context_path)
+
+
+@pytest.fixture
+def data_context_with_bad_datasource(tmp_path_factory):
+    """
+    This data_context is *manually* created to have the config we want, vs
+    created with DataContext.create()
+
+    This DataContext has a connection to a datasource named my_postgres_db
+    which is not a valid datasource.
+
+    It is used by test_get_batch_multiple_datasources_do_not_scan_all()
+    """
+    project_path = str(tmp_path_factory.mktemp("data_context"))
+    context_path = os.path.join(project_path, "great_expectations")
+    asset_config_path = os.path.join(context_path, "expectations")
+    fixture_dir = file_relative_path(__file__, "../test_fixtures")
+    os.makedirs(
+        os.path.join(asset_config_path, "my_dag_node"),
+        exist_ok=True,
+    )
+    shutil.copy(
+        os.path.join(fixture_dir, "great_expectations_bad_datasource.yml"),
+        str(os.path.join(context_path, "great_expectations.yml")),
+    )
+    return ge.data_context.DataContext(context_path)
 
 
 def test_create_duplicate_expectation_suite(titanic_data_context):
@@ -159,17 +224,21 @@ def test_get_available_data_asset_names_with_multiple_datasources_with_and_witho
 
 def test_list_expectation_suite_keys(data_context_parameterized_expectation_suite):
     assert data_context_parameterized_expectation_suite.list_expectation_suites() == [
-        ExpectationSuiteIdentifier(expectation_suite_name="my_dag_node.default")
+        ExpectationSuiteIdentifier(
+            expectation_suite_name=parameterized_expectation_suite_name
+        )
     ]
 
 
 def test_get_existing_expectation_suite(data_context_parameterized_expectation_suite):
     expectation_suite = (
         data_context_parameterized_expectation_suite.get_expectation_suite(
-            "my_dag_node.default"
+            parameterized_expectation_suite_name
         )
     )
-    assert expectation_suite.expectation_suite_name == "my_dag_node.default"
+    assert (
+        expectation_suite.expectation_suite_name == parameterized_expectation_suite_name
+    )
     assert len(expectation_suite.expectations) == 2
 
 
@@ -209,27 +278,30 @@ def test_save_expectation_suite(data_context_parameterized_expectation_suite):
 
 
 def test_compile_evaluation_parameter_dependencies(
-    data_context_parameterized_expectation_suite,
+    data_context_parameterized_expectation_suite: DataContext,
 ):
     assert (
         data_context_parameterized_expectation_suite._evaluation_parameter_dependencies
         == {}
     )
     data_context_parameterized_expectation_suite._compile_evaluation_parameter_dependencies()
-    assert data_context_parameterized_expectation_suite._evaluation_parameter_dependencies == {
-        "source_diabetes_data.default": [
-            {
-                "metric_kwargs_id": {
-                    "column=patient_nbr": [
-                        "expect_column_unique_value_count_to_be_between.result.observed_value"
-                    ]
+    assert (
+        data_context_parameterized_expectation_suite._evaluation_parameter_dependencies
+        == {
+            "source_diabetes_data.default": [
+                {
+                    "metric_kwargs_id": {
+                        "column=patient_nbr": [
+                            "expect_column_unique_value_count_to_be_between.result.observed_value"
+                        ]
+                    }
                 }
-            }
-        ],
-        "source_patient_data.default": [
-            "expect_table_row_count_to_equal.result.observed_value"
-        ],
-    }
+            ],
+            "source_patient_data.default": [
+                "expect_table_row_count_to_equal.result.observed_value"
+            ],
+        }
+    )
 
 
 def test_list_datasources(data_context_parameterized_expectation_suite):
@@ -284,87 +356,89 @@ def test_list_datasources(data_context_parameterized_expectation_suite):
         },
     ]
 
-    # Make sure passwords are masked in password or url fields
-    data_context_parameterized_expectation_suite.add_datasource(
-        "postgres_source_with_password",
-        initialize=False,
-        module_name="great_expectations.datasource",
-        class_name="SqlAlchemyDatasource",
-        credentials={
-            "drivername": "postgresql",
-            "host": os.getenv("GE_TEST_LOCAL_DB_HOSTNAME", "localhost"),
-            "port": "65432",
-            "username": "username_str",
-            "password": "password_str",
-            "database": "database_str",
-        },
-    )
+    if is_library_loadable(library_name="psycopg2"):
 
-    data_context_parameterized_expectation_suite.add_datasource(
-        "postgres_source_with_password_in_url",
-        initialize=False,
-        module_name="great_expectations.datasource",
-        class_name="SqlAlchemyDatasource",
-        credentials={
-            "url": "postgresql+psycopg2://username:password@host:65432/database",
-        },
-    )
-
-    datasources = data_context_parameterized_expectation_suite.list_datasources()
-
-    assert datasources == [
-        {
-            "name": "mydatasource",
-            "class_name": "PandasDatasource",
-            "module_name": "great_expectations.datasource",
-            "data_asset_type": {"class_name": "PandasDataset"},
-            "batch_kwargs_generators": {
-                "mygenerator": {
-                    "base_directory": "../data",
-                    "class_name": "SubdirReaderBatchKwargsGenerator",
-                    "reader_options": {"engine": "python", "sep": None},
-                }
-            },
-        },
-        {
-            "name": "second_pandas_source",
-            "class_name": "PandasDatasource",
-            "module_name": "great_expectations.datasource",
-            "data_asset_type": {
-                "class_name": "PandasDataset",
-                "module_name": "great_expectations.dataset",
-            },
-        },
-        {
-            "name": "postgres_source_with_password",
-            "class_name": "SqlAlchemyDatasource",
-            "module_name": "great_expectations.datasource",
-            "data_asset_type": {
-                "class_name": "SqlAlchemyDataset",
-                "module_name": "great_expectations.dataset",
-            },
-            "credentials": {
+        # Make sure passwords are masked in password or url fields
+        data_context_parameterized_expectation_suite.add_datasource(
+            "postgres_source_with_password",
+            initialize=False,
+            module_name="great_expectations.datasource",
+            class_name="SqlAlchemyDatasource",
+            credentials={
                 "drivername": "postgresql",
                 "host": os.getenv("GE_TEST_LOCAL_DB_HOSTNAME", "localhost"),
                 "port": "65432",
                 "username": "username_str",
-                "password": "***",
+                "password": "password_str",
                 "database": "database_str",
             },
-        },
-        {
-            "name": "postgres_source_with_password_in_url",
-            "class_name": "SqlAlchemyDatasource",
-            "module_name": "great_expectations.datasource",
-            "data_asset_type": {
-                "class_name": "SqlAlchemyDataset",
-                "module_name": "great_expectations.dataset",
+        )
+
+        data_context_parameterized_expectation_suite.add_datasource(
+            "postgres_source_with_password_in_url",
+            initialize=False,
+            module_name="great_expectations.datasource",
+            class_name="SqlAlchemyDatasource",
+            credentials={
+                "url": "postgresql+psycopg2://username:password@host:65432/database",
             },
-            "credentials": {
-                "url": "postgresql+psycopg2://username:***@host:65432/database",
+        )
+
+        datasources = data_context_parameterized_expectation_suite.list_datasources()
+
+        assert datasources == [
+            {
+                "name": "mydatasource",
+                "class_name": "PandasDatasource",
+                "module_name": "great_expectations.datasource",
+                "data_asset_type": {"class_name": "PandasDataset"},
+                "batch_kwargs_generators": {
+                    "mygenerator": {
+                        "base_directory": "../data",
+                        "class_name": "SubdirReaderBatchKwargsGenerator",
+                        "reader_options": {"engine": "python", "sep": None},
+                    }
+                },
             },
-        },
-    ]
+            {
+                "name": "second_pandas_source",
+                "class_name": "PandasDatasource",
+                "module_name": "great_expectations.datasource",
+                "data_asset_type": {
+                    "class_name": "PandasDataset",
+                    "module_name": "great_expectations.dataset",
+                },
+            },
+            {
+                "name": "postgres_source_with_password",
+                "class_name": "SqlAlchemyDatasource",
+                "module_name": "great_expectations.datasource",
+                "data_asset_type": {
+                    "class_name": "SqlAlchemyDataset",
+                    "module_name": "great_expectations.dataset",
+                },
+                "credentials": {
+                    "drivername": "postgresql",
+                    "host": os.getenv("GE_TEST_LOCAL_DB_HOSTNAME", "localhost"),
+                    "port": "65432",
+                    "username": "username_str",
+                    "password": PasswordMasker.MASKED_PASSWORD_STRING,
+                    "database": "database_str",
+                },
+            },
+            {
+                "name": "postgres_source_with_password_in_url",
+                "class_name": "SqlAlchemyDatasource",
+                "module_name": "great_expectations.datasource",
+                "data_asset_type": {
+                    "class_name": "SqlAlchemyDataset",
+                    "module_name": "great_expectations.dataset",
+                },
+                "credentials": {
+                    "url": f"postgresql+psycopg2://username:{PasswordMasker.MASKED_PASSWORD_STRING}@host:65432/database",
+                },
+            },
+        ]
 
 
 @freeze_time("09/26/2019 13:42:41")
@@ -388,6 +462,25 @@ def test_data_context_get_validation_result(titanic_data_context):
         failed_only=True,
     )
     assert len(failed_validation_result.results) == 8
+
+
+def test_data_context_get_latest_validation_result(titanic_data_context):
+    """
+    Test that the latest validation result can be correctly fetched from the configured results
+    store
+    """
+    for _ in range(2):
+        titanic_data_context.profile_datasource("mydatasource")
+    assert len(titanic_data_context.validations_store.list_keys()) == 2
+
+    validation_results = [
+        titanic_data_context.validations_store.get(val_key)
+        for val_key in titanic_data_context.validations_store.list_keys()
+    ]
+    latest_validation_result = titanic_data_context.get_validation_result(
+        "mydatasource.mygenerator.Titanic.BasicDatasetProfiler"
+    )
+    assert latest_validation_result in validation_results
 
 
 def test_data_context_get_datasource(titanic_data_context):
@@ -535,19 +628,13 @@ project_path/
                 subdir_reader/
                     Titanic/
                         BasicDatasetProfiler.json
-        notebooks/
-            pandas/
-                validation_playground.ipynb
-            spark/
-                validation_playground.ipynb
-            sql/
-                validation_playground.ipynb
         plugins/
             custom_data_docs/
                 renderers/
                 styles/
                     data_docs_custom_styles.css
                 views/
+        profilers/
         uncommitted/
             config_variables.yml
             data_docs/
@@ -683,12 +770,14 @@ def test_add_store(empty_data_context):
     assert isinstance(new_store, ExpectationsStore)
 
 
+# noinspection PyPep8Naming
 def test_ExplorerDataContext(titanic_data_context):
     context_root_directory = titanic_data_context.root_directory
     explorer_data_context = ExplorerDataContext(context_root_directory)
     assert explorer_data_context._expectation_explorer_manager
 
 
+# noinspection PyPep8Naming
 def test_ConfigOnlyDataContext__initialization(
     tmp_path_factory, basic_data_context_config
 ):
@@ -826,7 +915,11 @@ def test_data_context_updates_expectation_suite_names(
             "a_new_new_suite_name.json",
         ),
     ) as suite_file:
-        loaded_suite = expectationSuiteSchema.load(json.load(suite_file))
+        loaded_suite_dict: dict = expectationSuiteSchema.load(json.load(suite_file))
+        loaded_suite: ExpectationSuite = ExpectationSuite(
+            **loaded_suite_dict,
+            data_context=data_context_parameterized_expectation_suite,
+        )
         assert loaded_suite.expectation_suite_name == "a_new_new_suite_name"
 
     #   3. Using the new name but having the context draw that from the suite
@@ -1043,19 +1136,13 @@ great_expectations/
     checkpoints/
     expectations/
         .ge_store_backend_id
-    notebooks/
-        pandas/
-            validation_playground.ipynb
-        spark/
-            validation_playground.ipynb
-        sql/
-            validation_playground.ipynb
     plugins/
         custom_data_docs/
             renderers/
             styles/
                 data_docs_custom_styles.css
             views/
+    profilers/
     uncommitted/
         config_variables.yml
         data_docs/
@@ -1075,19 +1162,13 @@ great_expectations/
     checkpoints/
     expectations/
         .ge_store_backend_id
-    notebooks/
-        pandas/
-            validation_playground.ipynb
-        spark/
-            validation_playground.ipynb
-        sql/
-            validation_playground.ipynb
     plugins/
         custom_data_docs/
             renderers/
             styles/
                 data_docs_custom_styles.css
             views/
+    profilers/
     uncommitted/
         config_variables.yml
         data_docs/
@@ -1145,8 +1226,8 @@ def test_data_context_create_builds_base_directories(tmp_path_factory):
 
     for directory in [
         "expectations",
-        "notebooks",
         "plugins",
+        "profilers",
         "checkpoints",
         "uncommitted",
     ]:
@@ -1176,28 +1257,22 @@ def test_data_context_create_does_not_overwrite_existing_config_variables_yml(
     assert "# LOOK I WAS MODIFIED" in obs
 
 
-def test_scaffold_directories_and_notebooks(tmp_path_factory):
-    empty_directory = str(
-        tmp_path_factory.mktemp("test_scaffold_directories_and_notebooks")
-    )
+def test_scaffold_directories(tmp_path_factory):
+    empty_directory = str(tmp_path_factory.mktemp("test_scaffold_directories"))
     DataContext.scaffold_directories(empty_directory)
-    DataContext.scaffold_notebooks(empty_directory)
 
     assert set(os.listdir(empty_directory)) == {
         "plugins",
         "checkpoints",
+        "profilers",
         "expectations",
         ".gitignore",
         "uncommitted",
-        "notebooks",
     }
     assert set(os.listdir(os.path.join(empty_directory, "uncommitted"))) == {
         "data_docs",
         "validations",
     }
-    for subdir in DataContext.NOTEBOOK_SUBDIRECTORIES:
-        subdir_path = os.path.join(empty_directory, "notebooks", subdir)
-        assert set(os.listdir(subdir_path)) == {"validation_playground.ipynb"}
 
 
 def test_build_batch_kwargs(titanic_multibatch_data_context):
@@ -1419,13 +1494,12 @@ def test_get_checkpoint(empty_context_with_checkpoint):
     context = empty_context_with_checkpoint
     obs = context.get_checkpoint("my_checkpoint")
     assert isinstance(obs, Checkpoint)
-    config = obs.config
-    assert isinstance(config.to_json_dict(), dict)
-    assert config.to_json_dict() == {
-        "module_name": "great_expectations.checkpoint",
-        "class_name": "LegacyCheckpoint",
-        "config_version": None,
+    config = obs.get_config(mode=ConfigOutputModes.JSON_DICT)
+    assert isinstance(config, dict)
+    assert config == {
         "name": "my_checkpoint",
+        "class_name": "LegacyCheckpoint",
+        "module_name": "great_expectations.checkpoint",
         "batches": [
             {
                 "batch_kwargs": {
@@ -1448,7 +1522,7 @@ def test_get_checkpoint(empty_context_with_checkpoint):
 
 
 def test_get_checkpoint_raises_error_on_missing_batches_key(empty_data_context):
-    yaml = YAML(typ="safe")
+    yaml_obj = YAML(typ="safe")
     context = empty_data_context
 
     checkpoint = {
@@ -1460,7 +1534,7 @@ def test_get_checkpoint_raises_error_on_missing_batches_key(empty_data_context):
         "foo.yml",
     )
     with open(checkpoint_file_path, "w") as f:
-        yaml.dump(checkpoint, f)
+        yaml_obj.dump(checkpoint, f)
     assert os.path.isfile(checkpoint_file_path)
 
     with pytest.raises(ge_exceptions.CheckpointError) as e:
@@ -1468,7 +1542,7 @@ def test_get_checkpoint_raises_error_on_missing_batches_key(empty_data_context):
 
 
 def test_get_checkpoint_raises_error_on_non_list_batches(empty_data_context):
-    yaml = YAML(typ="safe")
+    yaml_obj = YAML(typ="safe")
     context = empty_data_context
 
     checkpoint = {
@@ -1481,7 +1555,7 @@ def test_get_checkpoint_raises_error_on_non_list_batches(empty_data_context):
         "foo.yml",
     )
     with open(checkpoint_file_path, "w") as f:
-        yaml.dump(checkpoint, f)
+        yaml_obj.dump(checkpoint, f)
     assert os.path.isfile(checkpoint_file_path)
 
     with pytest.raises(ge_exceptions.InvalidCheckpointConfigError) as e:
@@ -1491,7 +1565,7 @@ def test_get_checkpoint_raises_error_on_non_list_batches(empty_data_context):
 def test_get_checkpoint_raises_error_on_missing_expectation_suite_names(
     empty_data_context,
 ):
-    yaml = YAML(typ="safe")
+    yaml_obj = YAML(typ="safe")
     context = empty_data_context
 
     checkpoint = {
@@ -1508,7 +1582,7 @@ def test_get_checkpoint_raises_error_on_missing_expectation_suite_names(
         "foo.yml",
     )
     with open(checkpoint_file_path, "w") as f:
-        yaml.dump(checkpoint, f)
+        yaml_obj.dump(checkpoint, f)
     assert os.path.isfile(checkpoint_file_path)
 
     with pytest.raises(ge_exceptions.CheckpointError) as e:
@@ -1516,7 +1590,7 @@ def test_get_checkpoint_raises_error_on_missing_expectation_suite_names(
 
 
 def test_get_checkpoint_raises_error_on_missing_batch_kwargs(empty_data_context):
-    yaml = YAML(typ="safe")
+    yaml_obj = YAML(typ="safe")
     context = empty_data_context
 
     checkpoint = {
@@ -1529,7 +1603,7 @@ def test_get_checkpoint_raises_error_on_missing_batch_kwargs(empty_data_context)
         "foo.yml",
     )
     with open(checkpoint_file_path, "w") as f:
-        yaml.dump(checkpoint, f)
+        yaml_obj.dump(checkpoint, f)
     assert os.path.isfile(checkpoint_file_path)
 
     with pytest.raises(ge_exceptions.CheckpointError) as e:
@@ -1608,9 +1682,9 @@ def test_run_checkpoint_new_style(
 
 
 def test_get_validator_with_instantiated_expectation_suite(
-    empty_data_context, tmp_path_factory
+    empty_data_context_stats_enabled, tmp_path_factory
 ):
-    context = empty_data_context
+    context: DataContext = empty_data_context_stats_enabled
 
     base_directory = str(
         tmp_path_factory.mktemp(
@@ -1656,7 +1730,9 @@ data_connectors:
         batch_identifiers={
             "alphanumeric": "some_file",
         },
-        expectation_suite=ExpectationSuite("my_expectation_suite"),
+        expectation_suite=ExpectationSuite(
+            "my_expectation_suite", data_context=context
+        ),
     )
     assert my_validator.expectation_suite_name == "my_expectation_suite"
 
@@ -1713,6 +1789,86 @@ data_connectors:
     assert my_validator.expectation_suite_name == "A_expectation_suite"
 
 
+def test_get_validator_without_expectation_suite(in_memory_runtime_context):
+    context = in_memory_runtime_context
+
+    batch = context.get_batch_list(
+        batch_request=RuntimeBatchRequest(
+            datasource_name="pandas_datasource",
+            data_connector_name="runtime_data_connector",
+            data_asset_name="my_data_asset",
+            runtime_parameters={"batch_data": pd.DataFrame({"x": range(10)})},
+            batch_identifiers={
+                "id_key_0": "id_0_value_a",
+                "id_key_1": "id_1_value_a",
+            },
+        )
+    )[0]
+
+    my_validator = context.get_validator(batch=batch)
+    assert isinstance(my_validator.get_expectation_suite(), ExpectationSuite)
+    assert my_validator.expectation_suite_name == "default"
+
+
+def test_get_validator_with_batch(in_memory_runtime_context):
+    context = in_memory_runtime_context
+
+    my_batch = context.get_batch_list(
+        batch_request=RuntimeBatchRequest(
+            datasource_name="pandas_datasource",
+            data_connector_name="runtime_data_connector",
+            data_asset_name="my_data_asset",
+            runtime_parameters={"batch_data": pd.DataFrame({"x": range(10)})},
+            batch_identifiers={
+                "id_key_0": "id_0_value_a",
+                "id_key_1": "id_1_value_a",
+            },
+        )
+    )[0]
+
+    my_validator = context.get_validator(
+        batch=my_batch,
+        create_expectation_suite_with_name="A_expectation_suite",
+    )
+
+
+def test_get_validator_with_batch_list(in_memory_runtime_context):
+    context = in_memory_runtime_context
+
+    my_batch_list = [
+        context.get_batch_list(
+            batch_request=RuntimeBatchRequest(
+                datasource_name="pandas_datasource",
+                data_connector_name="runtime_data_connector",
+                data_asset_name="my_data_asset",
+                runtime_parameters={"batch_data": pd.DataFrame({"x": range(10)})},
+                batch_identifiers={
+                    "id_key_0": "id_0_value_a",
+                    "id_key_1": "id_1_value_a",
+                },
+            )
+        )[0],
+        context.get_batch_list(
+            batch_request=RuntimeBatchRequest(
+                datasource_name="pandas_datasource",
+                data_connector_name="runtime_data_connector",
+                data_asset_name="my_data_asset",
+                runtime_parameters={"batch_data": pd.DataFrame({"y": range(10)})},
+                batch_identifiers={
+                    "id_key_0": "id_0_value_b",
+                    "id_key_1": "id_1_value_b",
+                },
+            )
+        )[0],
+    ]
+
+    my_validator = context.get_validator(
+        batch_list=my_batch_list,
+        create_expectation_suite_with_name="A_expectation_suite",
+    )
+    assert len(my_validator.batches) == 2
+
+
 def test_get_batch_multiple_datasources_do_not_scan_all(
     data_context_with_bad_datasource,
 ):
@@ -1721,7 +1877,7 @@ def test_get_batch_multiple_datasources_do_not_scan_all(
 
     A DataContext can have "stale" datasources in its configuration (ie. connections to DBs that are now offline).
     If we configure a new datasource and are only using it (like the PandasDatasource below), then we don't
-    want to be dependant on all the "stale" datasources working too.
+    want to be dependent on all the "stale" datasources working too.
 
     data_context_with_bad_datasource is a fixture that contains a configuration for an invalid datasource
     (with "fake_port" and "fake_host")
@@ -1744,7 +1900,38 @@ def test_get_batch_multiple_datasources_do_not_scan_all(
     assert len(batch) == 3
 
 
-def test_add_checkpoint_from_yaml(empty_data_context):
+@mock.patch(
+    "great_expectations.core.usage_statistics.usage_statistics.UsageStatisticsHandler.emit"
+)
+def test_add_expectation_to_expectation_suite(
+    mock_emit, empty_data_context_stats_enabled
+):
+    context: DataContext = empty_data_context_stats_enabled
+
+    expectation_suite: ExpectationSuite = context.create_expectation_suite(
+        expectation_suite_name="my_new_expectation_suite"
+    )
+    expectation_suite.add_expectation(
+        ExpectationConfiguration(
+            expectation_type="expect_table_row_count_to_equal", kwargs={"value": 10}
+        )
+    )
+    assert mock_emit.call_count == 1
+    assert mock_emit.call_args_list == [
+        mock.call(
+            {
+                "event": "expectation_suite.add_expectation",
+                "event_payload": {},
+                "success": True,
+            }
+        )
+    ]
+
+
+@mock.patch(
+    "great_expectations.core.usage_statistics.usage_statistics.UsageStatisticsHandler.emit"
+)
+def test_add_checkpoint_from_yaml(mock_emit, empty_data_context_stats_enabled):
     """
     What does this test and why?
     We should be able to add a checkpoint directly from a valid yaml configuration.
@@ -1753,7 +1940,7 @@ def test_add_checkpoint_from_yaml(empty_data_context):
     Note: This tests multiple items and could stand to be broken up.
     """
 
-    context: DataContext = empty_data_context
+    context: DataContext = empty_data_context_stats_enabled
     checkpoint_name: str = "my_new_checkpoint"
 
     assert checkpoint_name not in context.list_checkpoints()
@@ -1777,6 +1964,24 @@ validations:
     checkpoint_from_test_yaml_config = context.test_yaml_config(
         checkpoint_yaml_config, name=checkpoint_name
     )
+    assert mock_emit.call_count == 1
+    # Substitute anonymized name since it changes for each run
+    anonymized_name = mock_emit.call_args_list[0][0][0]["event_payload"][
+        "anonymized_name"
+    ]
+    expected_call_args_list = [
+        mock.call(
+            {
+                "event": "data_context.test_yaml_config",
+                "event_payload": {
+                    "anonymized_name": anonymized_name,
+                    "parent_class": "SimpleCheckpoint",
+                },
+                "success": True,
+            }
+        ),
+    ]
+    assert mock_emit.call_args_list == expected_call_args_list
 
     # test_yaml_config() no longer stores checkpoints automatically
     assert checkpoint_name not in context.list_checkpoints()
@@ -1793,7 +1998,7 @@ module_name: great_expectations.checkpoint
 class_name: Checkpoint
 run_name_template: '%Y%m%d-%H%M%S-my-run-name-template'
 expectation_suite_name:
-batch_request:
+batch_request: {}
 action_list:
   - name: store_validation_result
     action:
@@ -1816,6 +2021,8 @@ validations:
         index: -1
     expectation_suite_name: newsuite
 profilers: []
+ge_cloud_id:
+expectation_suite_ge_cloud_id:
 """
 
     checkpoint_dir = os.path.join(
@@ -1828,10 +2035,30 @@ profilers: []
         checkpoint_from_disk = cf.read()
 
     assert checkpoint_from_disk == expected_checkpoint_yaml
-    assert checkpoint_from_yaml.config.to_yaml_str() == expected_checkpoint_yaml
+    assert (
+        checkpoint_from_yaml.get_config(mode=ConfigOutputModes.YAML)
+        == expected_checkpoint_yaml
+    )
+    assert deep_filter_properties_iterable(
+        properties=checkpoint_from_yaml.get_config(mode=ConfigOutputModes.DICT),
+        clean_falsy=True,
+    ) == deep_filter_properties_iterable(
+        properties=dict(yaml.load(expected_checkpoint_yaml)),
+        clean_falsy=True,
+    )
 
-    checkpoint_from_store = context.get_checkpoint(checkpoint_name)
-    assert checkpoint_from_store.config.to_yaml_str() == expected_checkpoint_yaml
+    checkpoint_from_store = context.get_checkpoint(name=checkpoint_name)
+    assert (
+        checkpoint_from_store.get_config(mode=ConfigOutputModes.YAML)
+        == expected_checkpoint_yaml
+    )
+    assert deep_filter_properties_iterable(
+        properties=checkpoint_from_store.get_config(mode=ConfigOutputModes.DICT),
+        clean_falsy=True,
+    ) == deep_filter_properties_iterable(
+        properties=dict(yaml.load(expected_checkpoint_yaml)),
+        clean_falsy=True,
+    )
 
     expected_action_list = [
         {
@@ -1859,15 +2086,14 @@ profilers: []
     )
 
     assert checkpoint_from_yaml.name == checkpoint_name
-    assert checkpoint_from_yaml.config.to_json_dict() == {
+    assert checkpoint_from_yaml.get_config(
+        mode=ConfigOutputModes.JSON_DICT, clean_falsy=True
+    ) == {
         "name": "my_new_checkpoint",
         "config_version": 1.0,
-        "template_name": None,
-        "module_name": "great_expectations.checkpoint",
         "class_name": "Checkpoint",
+        "module_name": "great_expectations.checkpoint",
         "run_name_template": "%Y%m%d-%H%M%S-my-run-name-template",
-        "expectation_suite_name": None,
-        "batch_request": None,
         "action_list": [
             {
                 "name": "store_validation_result",
@@ -1882,8 +2108,6 @@ profilers: []
                 "action": {"class_name": "UpdateDataDocsAction", "site_names": []},
             },
         ],
-        "evaluation_parameters": {},
-        "runtime_configuration": {},
         "validations": [
             {
                 "batch_request": {
@@ -1895,7 +2119,6 @@ profilers: []
                 "expectation_suite_name": "newsuite",
             }
         ],
-        "profilers": [],
     }
 
     assert isinstance(checkpoint_from_yaml, Checkpoint)
@@ -1903,14 +2126,22 @@ profilers: []
     assert checkpoint_name in context.list_checkpoints()
     assert len(context.list_checkpoints()) == 1
 
+    # No other usage stats calls detected
+    assert mock_emit.call_count == 1
 
-def test_add_checkpoint_from_yaml_fails_for_unrecognized_class_name(empty_data_context):
+
+@mock.patch(
+    "great_expectations.core.usage_statistics.usage_statistics.UsageStatisticsHandler.emit"
+)
+def test_add_checkpoint_from_yaml_fails_for_unrecognized_class_name(
+    mock_emit, empty_data_context_stats_enabled
+):
     """
     What does this test and why?
     Checkpoint yaml should have a valid class_name
     """
 
-    context: DataContext = empty_data_context
+    context: DataContext = empty_data_context_stats_enabled
     checkpoint_name: str = "my_new_checkpoint"
 
     assert checkpoint_name not in context.list_checkpoints()
@@ -1941,14 +2172,28 @@ validations:
 
     assert checkpoint_name not in context.list_checkpoints()
     assert len(context.list_checkpoints()) == 0
+    assert mock_emit.call_count == 1
+    expected_call_args_list = [
+        mock.call(
+            {
+                "event": "data_context.test_yaml_config",
+                "event_payload": {},
+                "success": False,
+            }
+        ),
+    ]
+    assert mock_emit.call_args_list == expected_call_args_list
 
 
-def test_add_datasource_from_yaml(empty_data_context):
+@mock.patch(
+    "great_expectations.core.usage_statistics.usage_statistics.UsageStatisticsHandler.emit"
+)
+def test_add_datasource_from_yaml(mock_emit, empty_data_context_stats_enabled):
     """
     What does this test and why?
     Adding a datasource using context.add_datasource() via a config from a parsed yaml string without substitution variables should work as expected.
     """
-    context: DataContext = empty_data_context
+    context: DataContext = empty_data_context_stats_enabled
 
     assert "my_new_datasource" not in context.datasources.keys()
     assert "my_new_datasource" not in context.list_datasources()
@@ -1972,10 +2217,57 @@ def test_add_datasource_from_yaml(empty_data_context):
     datasource_from_test_yaml_config = context.test_yaml_config(
         example_yaml, name=datasource_name
     )
+    assert mock_emit.call_count == 1
+    # Substitute anonymized names since it changes for each run
+    anonymized_datasource_name = mock_emit.call_args_list[0][0][0]["event_payload"][
+        "anonymized_name"
+    ]
+    anonymized_execution_engine_name = mock_emit.call_args_list[0][0][0][
+        "event_payload"
+    ]["anonymized_execution_engine"]["anonymized_name"]
+    anonymized_data_connector_name = mock_emit.call_args_list[0][0][0]["event_payload"][
+        "anonymized_data_connectors"
+    ][0]["anonymized_name"]
+    expected_call_args_list = [
+        mock.call(
+            {
+                "event": "data_context.test_yaml_config",
+                "event_payload": {
+                    "anonymized_name": anonymized_datasource_name,
+                    "parent_class": "Datasource",
+                    "anonymized_execution_engine": {
+                        "anonymized_name": anonymized_execution_engine_name,
+                        "parent_class": "PandasExecutionEngine",
+                    },
+                    "anonymized_data_connectors": [
+                        {
+                            "anonymized_name": anonymized_data_connector_name,
+                            "parent_class": "InferredAssetFilesystemDataConnector",
+                        }
+                    ],
+                },
+                "success": True,
+            }
+        ),
+    ]
+    assert mock_emit.call_args_list == expected_call_args_list
 
     datasource_from_yaml = context.add_datasource(
         name=datasource_name, **yaml.load(example_yaml)
     )
+    assert mock_emit.call_count == 2
+    expected_call_args_list.extend(
+        [
+            mock.call(
+                {
+                    "event": "data_context.add_datasource",
+                    "event_payload": {},
+                    "success": True,
+                }
+            ),
+        ]
+    )
+    assert mock_emit.call_args_list == expected_call_args_list
 
     assert datasource_from_test_yaml_config.config == datasource_from_yaml.config
 
@@ -2009,9 +2301,30 @@ def test_add_datasource_from_yaml(empty_data_context):
     assert datasource_name in [d["name"] for d in context.list_datasources()]
     assert datasource_name in context.datasources
     assert datasource_name in context.get_config()["datasources"]
+    assert mock_emit.call_count == 3
+    expected_call_args_list.extend(
+        [
+            mock.call(
+                {
+                    "event": "data_context.__init__",
+                    "event_payload": {},
+                    "success": True,
+                }
+            ),
+        ]
+    )
+    assert mock_emit.call_args_list == expected_call_args_list
 
 
-def test_add_datasource_from_yaml_sql_datasource(sa, test_backends, empty_data_context):
+@mock.patch(
+    "great_expectations.core.usage_statistics.usage_statistics.UsageStatisticsHandler.emit"
+)
+def test_add_datasource_from_yaml_sql_datasource(
+    mock_emit,
+    sa,
+    test_backends,
+    empty_data_context_stats_enabled,
+):
     """
     What does this test and why?
     Adding a datasource using context.add_datasource() via a config from a parsed yaml string without substitution variables should work as expected.
@@ -2020,7 +2333,7 @@ def test_add_datasource_from_yaml_sql_datasource(sa, test_backends, empty_data_c
     if "postgresql" not in test_backends:
         pytest.skip("test_add_datasource_from_yaml_sql_datasource requires postgresql")
 
-    context: DataContext = empty_data_context
+    context: DataContext = empty_data_context_stats_enabled
 
     assert "my_new_datasource" not in context.datasources.keys()
     assert "my_new_datasource" not in context.list_datasources()
@@ -2028,7 +2341,7 @@ def test_add_datasource_from_yaml_sql_datasource(sa, test_backends, empty_data_c
 
     datasource_name: str = "my_datasource"
 
-    example_yaml = f"""
+    example_yaml = """
     class_name: SimpleSqlalchemyDatasource
     introspection:
       whole_table:
@@ -2045,9 +2358,52 @@ def test_add_datasource_from_yaml_sql_datasource(sa, test_backends, empty_data_c
     datasource_from_test_yaml_config = context.test_yaml_config(
         example_yaml, name=datasource_name
     )
+    assert mock_emit.call_count == 1
+    # Substitute anonymized name since it changes for each run
+    anonymized_name = mock_emit.call_args_list[0][0][0]["event_payload"][
+        "anonymized_name"
+    ]
+    anonymized_data_connector_name = mock_emit.call_args_list[0][0][0]["event_payload"][
+        "anonymized_data_connectors"
+    ][0]["anonymized_name"]
+    expected_call_args_list = [
+        mock.call(
+            {
+                "event": "data_context.test_yaml_config",
+                "event_payload": {
+                    "anonymized_name": anonymized_name,
+                    "parent_class": "SimpleSqlalchemyDatasource",
+                    "anonymized_execution_engine": {
+                        "parent_class": "SqlAlchemyExecutionEngine"
+                    },
+                    "anonymized_data_connectors": [
+                        {
+                            "anonymized_name": anonymized_data_connector_name,
+                            "parent_class": "InferredAssetSqlDataConnector",
+                        }
+                    ],
+                },
+                "success": True,
+            }
+        ),
+    ]
+    assert mock_emit.call_args_list == expected_call_args_list
     datasource_from_yaml = context.add_datasource(
         name=datasource_name, **yaml.load(example_yaml)
     )
+    assert mock_emit.call_count == 2
+    expected_call_args_list.extend(
+        [
+            mock.call(
+                {
+                    "event": "data_context.add_datasource",
+                    "event_payload": {},
+                    "success": True,
+                }
+            ),
+        ]
+    )
+    assert mock_emit.call_args_list == expected_call_args_list
 
     # .config not implemented for SimpleSqlalchemyDatasource
     assert datasource_from_test_yaml_config.config == {}
@@ -2139,17 +2495,232 @@ def test_add_datasource_from_yaml_sql_datasource(sa, test_backends, empty_data_c
         [("whole_table", OrderedDict([("data_asset_name_suffix", "__whole_table")]))]
     )
     assert datasource_config.module_name == "great_expectations.datasource"
+    assert mock_emit.call_count == 3
+    expected_call_args_list.extend(
+        [
+            mock.call(
+                {
+                    "event": "data_context.__init__",
+                    "event_payload": {},
+                    "success": True,
+                }
+            ),
+        ]
+    )
+    assert mock_emit.call_args_list == expected_call_args_list
 
 
+@mock.patch(
+    "great_expectations.core.usage_statistics.usage_statistics.UsageStatisticsHandler.emit"
+)
+def test_add_datasource_from_yaml_sql_datasource_with_credentials(
+    mock_emit, sa, test_backends, empty_data_context_stats_enabled
+):
+    """
+    What does this test and why?
+    Adding a datasource using context.add_datasource() via a config from a parsed yaml string without substitution variables.
+    In addition, this tests whether the same can be accomplished using credentials with a  Datasource and SqlAlchemyExecutionEngine, rather than a SimpleSqlalchemyDatasource
+    """
+
+    if "postgresql" not in test_backends:
+        pytest.skip(
+            "test_add_datasource_from_yaml_sql_datasource_with_credentials requires postgresql"
+        )
+
+    context: DataContext = empty_data_context_stats_enabled
+
+    assert "my_new_datasource" not in context.datasources.keys()
+    assert "my_new_datasource" not in context.list_datasources()
+    assert "my_new_datasource" not in context.get_config()["datasources"]
+
+    datasource_name: str = "my_datasource"
+
+    example_yaml = """
+    class_name: Datasource
+    execution_engine:
+      class_name: SqlAlchemyExecutionEngine
+      credentials:
+        host: localhost
+        port: 5432
+        username: postgres
+        password:
+        database: test_ci
+        drivername: postgresql
+    data_connectors:
+      default_inferred_data_connector_name:
+        class_name: InferredAssetSqlDataConnector
+        name: whole_table
+      default_runtime_data_connector_name:
+        class_name: RuntimeDataConnector
+        batch_identifiers:
+          - default_identifier_name
+    """
+
+    datasource_from_test_yaml_config = context.test_yaml_config(
+        example_yaml, name=datasource_name
+    )
+    assert mock_emit.call_count == 1
+    # Substitute anonymized name since it changes for each run
+    anonymized_name = mock_emit.call_args_list[0][0][0]["event_payload"][
+        "anonymized_name"
+    ]
+    anonymized_execution_engine_name = mock_emit.call_args_list[0][0][0][
+        "event_payload"
+    ]["anonymized_execution_engine"]["anonymized_name"]
+    anonymized_data_connector_name = mock_emit.call_args_list[0][0][0]["event_payload"][
+        "anonymized_data_connectors"
+    ][0]["anonymized_name"]
+    anonymized_data_connector_name_1 = mock_emit.call_args_list[0][0][0][
+        "event_payload"
+    ]["anonymized_data_connectors"][1]["anonymized_name"]
+    expected_call_args_list = [
+        mock.call(
+            {
+                "event": "data_context.test_yaml_config",
+                "event_payload": {
+                    "anonymized_name": anonymized_name,
+                    "parent_class": "Datasource",
+                    "anonymized_execution_engine": {
+                        "anonymized_name": anonymized_execution_engine_name,
+                        "parent_class": "SqlAlchemyExecutionEngine",
+                    },
+                    "anonymized_data_connectors": [
+                        {
+                            "anonymized_name": anonymized_data_connector_name,
+                            "parent_class": "InferredAssetSqlDataConnector",
+                        },
+                        {
+                            "anonymized_name": anonymized_data_connector_name_1,
+                            "parent_class": "RuntimeDataConnector",
+                        },
+                    ],
+                },
+                "success": True,
+            }
+        ),
+    ]
+    assert mock_emit.call_args_list == expected_call_args_list
+    datasource_from_yaml = context.add_datasource(
+        name=datasource_name, **yaml.load(example_yaml)
+    )
+    assert mock_emit.call_count == 2
+    expected_call_args_list.extend(
+        [
+            mock.call(
+                {
+                    "event": "data_context.add_datasource",
+                    "event_payload": {},
+                    "success": True,
+                }
+            ),
+        ]
+    )
+    assert mock_emit.call_args_list == expected_call_args_list
+
+    assert datasource_from_test_yaml_config.config == {
+        "execution_engine": {
+            "class_name": "SqlAlchemyExecutionEngine",
+            "credentials": {
+                "host": "localhost",
+                "port": 5432,
+                "username": "postgres",
+                "password": None,
+                "database": "test_ci",
+                "drivername": "postgresql",
+            },
+            "module_name": "great_expectations.execution_engine",
+        },
+        "data_connectors": {
+            "default_inferred_data_connector_name": {
+                "class_name": "InferredAssetSqlDataConnector",
+                "module_name": "great_expectations.datasource.data_connector",
+            },
+            "default_runtime_data_connector_name": {
+                "class_name": "RuntimeDataConnector",
+                "batch_identifiers": ["default_identifier_name"],
+                "module_name": "great_expectations.datasource.data_connector",
+            },
+        },
+    }
+    assert datasource_from_yaml.config == {
+        "execution_engine": {
+            "class_name": "SqlAlchemyExecutionEngine",
+            "credentials": {
+                "host": "localhost",
+                "port": 5432,
+                "username": "postgres",
+                "password": None,
+                "database": "test_ci",
+                "drivername": "postgresql",
+            },
+            "module_name": "great_expectations.execution_engine",
+        },
+        "data_connectors": {
+            "default_inferred_data_connector_name": {
+                "class_name": "InferredAssetSqlDataConnector",
+                "module_name": "great_expectations.datasource.data_connector",
+            },
+            "default_runtime_data_connector_name": {
+                "class_name": "RuntimeDataConnector",
+                "batch_identifiers": ["default_identifier_name"],
+                "module_name": "great_expectations.datasource.data_connector",
+            },
+        },
+    }
+
+    assert datasource_from_yaml.name == datasource_name
+    assert isinstance(datasource_from_yaml, Datasource)
+    assert datasource_from_yaml.__class__.__name__ == "Datasource"
+
+    assert datasource_name == context.list_datasources()[0]["name"]
+    assert isinstance(context.datasources[datasource_name], Datasource)
+
+    assert isinstance(
+        context.get_datasource(datasource_name=datasource_name),
+        Datasource,
+    )
+    assert isinstance(
+        context.get_config()["datasources"][datasource_name], DatasourceConfig
+    )
+
+    # making sure the config is right
+    datasource_config = context.get_config()["datasources"][datasource_name]
+    assert datasource_config.class_name == "Datasource"
+    assert datasource_config.execution_engine.credentials == {
+        "host": "localhost",
+        "port": 5432,
+        "username": "postgres",
+        "password": None,
+        "database": "test_ci",
+        "drivername": "postgresql",
+    }
+    assert datasource_config.execution_engine.credentials == OrderedDict(
+        [
+            ("host", "localhost"),
+            ("port", 5432),
+            ("username", "postgres"),
+            ("password", None),
+            ("database", "test_ci"),
+            ("drivername", "postgresql"),
+        ]
+    )
+
+    # No other usage stats calls detected
+    assert mock_emit.call_count == 2
+
+
+@mock.patch(
+    "great_expectations.core.usage_statistics.usage_statistics.UsageStatisticsHandler.emit"
+)
 def test_add_datasource_from_yaml_with_substitution_variables(
-    empty_data_context, monkeypatch
+    mock_emit, empty_data_context_stats_enabled, monkeypatch
 ):
     """
     What does this test and why?
     Adding a datasource using context.add_datasource() via a config from a parsed yaml string containing substitution variables should work as expected.
     """
 
-    context: DataContext = empty_data_context
+    context: DataContext = empty_data_context_stats_enabled
 
     assert "my_new_datasource" not in context.datasources.keys()
     assert "my_new_datasource" not in context.list_datasources()
@@ -2176,9 +2747,56 @@ def test_add_datasource_from_yaml_with_substitution_variables(
         example_yaml, name=datasource_name
     )
 
+    assert mock_emit.call_count == 1
+    # Substitute anonymized names since it changes for each run
+    anonymized_datasource_name = mock_emit.call_args_list[0][0][0]["event_payload"][
+        "anonymized_name"
+    ]
+    anonymized_execution_engine_name = mock_emit.call_args_list[0][0][0][
+        "event_payload"
+    ]["anonymized_execution_engine"]["anonymized_name"]
+    anonymized_data_connector_name = mock_emit.call_args_list[0][0][0]["event_payload"][
+        "anonymized_data_connectors"
+    ][0]["anonymized_name"]
+    expected_call_args_list = [
+        mock.call(
+            {
+                "event": "data_context.test_yaml_config",
+                "event_payload": {
+                    "anonymized_name": anonymized_datasource_name,
+                    "parent_class": "Datasource",
+                    "anonymized_execution_engine": {
+                        "anonymized_name": anonymized_execution_engine_name,
+                        "parent_class": "PandasExecutionEngine",
+                    },
+                    "anonymized_data_connectors": [
+                        {
+                            "anonymized_name": anonymized_data_connector_name,
+                            "parent_class": "InferredAssetFilesystemDataConnector",
+                        }
+                    ],
+                },
+                "success": True,
+            }
+        ),
+    ]
+    assert mock_emit.call_args_list == expected_call_args_list
     datasource_from_yaml = context.add_datasource(
         name=datasource_name, **yaml.load(example_yaml)
     )
+    assert mock_emit.call_count == 2
+    expected_call_args_list.extend(
+        [
+            mock.call(
+                {
+                    "event": "data_context.add_datasource",
+                    "event_payload": {},
+                    "success": True,
+                }
+            ),
+        ]
+    )
+    assert mock_emit.call_args_list == expected_call_args_list
 
     assert datasource_from_test_yaml_config.config == datasource_from_yaml.config
 
@@ -2212,3 +2830,52 @@ def test_add_datasource_from_yaml_with_substitution_variables(
     assert datasource_name in [d["name"] for d in context.list_datasources()]
     assert datasource_name in context.datasources
     assert datasource_name in context.get_config()["datasources"]
+    assert mock_emit.call_count == 3
+    expected_call_args_list.extend(
+        [
+            mock.call(
+                {
+                    "event": "data_context.__init__",
+                    "event_payload": {},
+                    "success": True,
+                }
+            ),
+        ]
+    )
+    assert mock_emit.call_args_list == expected_call_args_list
+
+
+def test_stores_evaluation_parameters_resolve_correctly(data_context_with_query_store):
+    """End to end test demonstrating usage of Stores evaluation parameters"""
+    context = data_context_with_query_store
+    suite_name = "eval_param_suite"
+    context.create_expectation_suite(expectation_suite_name=suite_name)
+    batch_request = {
+        "datasource_name": "my_datasource",
+        "data_connector_name": "default_runtime_data_connector_name",
+        "data_asset_name": "DEFAULT_ASSET_NAME",
+        "batch_identifiers": {"default_identifier_name": "test123"},
+        "runtime_parameters": {"query": "select * from titanic"},
+    }
+    validator = context.get_validator(
+        batch_request=RuntimeBatchRequest(**batch_request),
+        expectation_suite_name=suite_name,
+    )
+    validator.expect_table_row_count_to_equal(
+        value={
+            # unnecessarily complex URN which should resolve to the actual row count.
+            "$PARAMETER": "abs(-urn:great_expectations:stores:my_query_store:col_count - urn:great_expectations:stores:my_query_store:dist_col_count) + 4"
+        }
+    )
+
+    checkpoint_config = {
+        "class_name": "SimpleCheckpoint",
+        "validations": [
+            {"batch_request": batch_request, "expectation_suite_name": suite_name}
+        ],
+    }
+    checkpoint = SimpleCheckpoint(
+        f"_tmp_checkpoint_{suite_name}", context, **checkpoint_config
+    )
+    checkpoint_result = checkpoint.run()
+    assert checkpoint_result.get("success") is True

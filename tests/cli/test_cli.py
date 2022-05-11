@@ -36,8 +36,8 @@ def test_cli_command_help(caplog, invocation):
     assert (
         """Options:
   --version                Show the version and exit.
-  --v2-api / --v3-api      Default to v2 (Batch Kwargs) API. Use --v3-api for v3
-                           (Batch Request) API"""
+  --v3-api / --v2-api      Default to v3 (Batch Request) API. Use --v2-api for
+                           v2 (Batch Kwargs) API"""
         in result.output
     )
     assert (
@@ -539,7 +539,7 @@ def test_assume_yes_using_full_flag_using_checkpoint_delete(
 
     result = runner.invoke(
         cli,
-        f"--v3-api checkpoint list",
+        "--v3-api checkpoint list",
         catch_exceptions=False,
     )
     stdout = result.stdout
@@ -611,7 +611,7 @@ def test_assume_yes_using_yes_flag_using_checkpoint_delete(
 
     result = runner.invoke(
         cli,
-        f"--v3-api checkpoint list",
+        "--v3-api checkpoint list",
         catch_exceptions=False,
     )
     stdout = result.stdout
@@ -683,7 +683,7 @@ def test_assume_yes_using_y_flag_using_checkpoint_delete(
 
     result = runner.invoke(
         cli,
-        f"--v3-api checkpoint list",
+        "--v3-api checkpoint list",
         catch_exceptions=False,
     )
     stdout = result.stdout
@@ -709,7 +709,7 @@ def test_using_assume_yes_flag_on_command_with_no_assume_yes_implementation(
     runner: CliRunner = CliRunner(mix_stderr=False)
     result: Result = runner.invoke(
         cli,
-        f"--v3-api --assume-yes checkpoint list",
+        "--v3-api --assume-yes checkpoint list",
         catch_exceptions=False,
     )
     stdout: str = result.stdout

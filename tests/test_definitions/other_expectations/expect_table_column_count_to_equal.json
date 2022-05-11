@@ -39,11 +39,11 @@
       "tests": [
         {
           "title": "basic_positive_case",
-                    "exact_match_out": false,
-
-          "in": [
-            4
-          ],
+          "include_in_gallery": true,
+          "exact_match_out": false,
+          "in": {
+            "value": 4
+          },
           "kwargs": {},
           "out": {
             "success": true,
@@ -52,10 +52,11 @@
         },
         {
           "title": "basic_negative_case_upper_error",
+          "include_in_gallery": true,
           "exact_match_out": false,
-          "in": [
-            5
-          ],
+          "in": {
+            "value": 5
+          },
           "out": {
             "success": false,
             "observed_value": 4
@@ -64,9 +65,9 @@
         {
           "title": "basic_negative_case_lower_error",
           "exact_match_out": false,
-          "in": [
-            0
-          ],
+          "in": {
+            "value": 0
+          },
           "out": {
             "success": false,
             "observed_value": 4

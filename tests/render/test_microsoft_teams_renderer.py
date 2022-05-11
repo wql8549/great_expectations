@@ -1,5 +1,3 @@
-import pytest
-
 from great_expectations.core import ExpectationSuiteValidationResult, RunIdentifier
 from great_expectations.data_context.types.resource_identifiers import (
     BatchIdentifier,
@@ -67,17 +65,17 @@ def test_MicrosoftTeams_validation_results_with_datadocs():
                                                     "text": "Validation " "results",
                                                     "type": "TextBlock",
                                                     "weight": "bolder",
-                                                    "wrap": True,
+                                                    "wrap": "true",
                                                 },
                                                 {
-                                                    "isSubtle": True,
+                                                    "isSubtle": "true",
                                                     "spacing": "none",
                                                     "text": "May "
                                                     "08 "
                                                     "2012 "
                                                     "07:14:45",
                                                     "type": "TextBlock",
-                                                    "wrap": True,
+                                                    "wrap": "true",
                                                 },
                                             ],
                                             "type": "Column",
@@ -87,7 +85,7 @@ def test_MicrosoftTeams_validation_results_with_datadocs():
                                     "type": "ColumnSet",
                                 }
                             ],
-                            "separator": True,
+                            "separator": "true",
                             "type": "Container",
                         },
                         {
@@ -132,7 +130,7 @@ def test_MicrosoftTeams_validation_results_with_datadocs():
                                     "type": "TextBlock",
                                 },
                             ],
-                            "separator": True,
+                            "separator": "true",
                             "type": "Container",
                         },
                     ],

@@ -8,22 +8,12 @@ from great_expectations.util import filter_properties_dict
 
 try:
     import sqlalchemy
-    from sqlalchemy import (
-        Column,
-        MetaData,
-        String,
-        Table,
-        and_,
-        column,
-        create_engine,
-        select,
-        text,
-    )
+    from sqlalchemy import create_engine
     from sqlalchemy.engine.url import URL
-    from sqlalchemy.exc import SQLAlchemyError
 except ImportError:
     sqlalchemy = None
     create_engine = None
+    URL = None
 
 
 logger = logging.getLogger(__name__)
@@ -42,7 +32,7 @@ class SqlAlchemyQueryStore(Store):
         store_backend=None,
         runtime_environment=None,
         store_name=None,
-    ):
+    ) -> None:
         if not sqlalchemy:
             raise ge_exceptions.DataContextError(
                 "sqlalchemy module not found, but is required for "
@@ -76,6 +66,8 @@ class SqlAlchemyQueryStore(Store):
             self.engine = credentials["engine"]
         elif "url" in credentials:
             self.engine = create_engine(credentials["url"])
+        elif "connection_string" in credentials:
+            self.engine = create_engine(credentials["connection_string"])
         else:
             drivername = credentials.pop("drivername")
             options = URL(drivername, **credentials)
@@ -92,7 +84,7 @@ class SqlAlchemyQueryStore(Store):
             "module_name": self.__class__.__module__,
             "class_name": self.__class__.__name__,
         }
-        filter_properties_dict(properties=self._config, inplace=True)
+        filter_properties_dict(properties=self._config, clean_falsy=True, inplace=True)
 
     def _convert_key(self, key):
         if isinstance(key, str):

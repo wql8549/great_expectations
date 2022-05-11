@@ -3,18 +3,12 @@ import logging
 import re
 import traceback
 
-import altair as alt
-import pandas as pd
-
 from great_expectations.core.expectation_configuration import ExpectationConfiguration
 from great_expectations.core.expectation_validation_result import (
     ExpectationValidationResult,
 )
 from great_expectations.data_context.util import instantiate_class_from_config
 from great_expectations.exceptions import ClassInstantiationError
-from great_expectations.expectations.core.expect_column_kl_divergence_to_be_less_than import (
-    ExpectColumnKlDivergenceToBeLessThan,
-)
 from great_expectations.expectations.registry import get_renderer_impl
 from great_expectations.render.renderer.content_block import (
     ExceptionListContentBlockRenderer,
@@ -22,13 +16,11 @@ from great_expectations.render.renderer.content_block import (
 from great_expectations.render.renderer.renderer import Renderer
 from great_expectations.render.types import (
     RenderedBulletListContent,
-    RenderedGraphContent,
     RenderedHeaderContent,
     RenderedSectionContent,
     RenderedStringTemplateContent,
     RenderedTableContent,
     TextContent,
-    ValueListContent,
 )
 from great_expectations.util import load_class, verify_dynamic_loading_support
 
@@ -40,7 +32,7 @@ def convert_to_string_and_escape(var):
 
 
 class ColumnSectionRenderer(Renderer):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
     @classmethod
@@ -64,7 +56,9 @@ class ColumnSectionRenderer(Renderer):
 
 
 class ProfilingResultsColumnSectionRenderer(ColumnSectionRenderer):
-    def __init__(self, properties_table_renderer=None, runtime_environment=None):
+    def __init__(
+        self, properties_table_renderer=None, runtime_environment=None
+    ) -> None:
         super().__init__()
         if properties_table_renderer is None:
             properties_table_renderer = {
@@ -115,7 +109,7 @@ class ProfilingResultsColumnSectionRenderer(ColumnSectionRenderer):
                         getattr(self, content_block_function_name)(evrs)
                     )
             except Exception as e:
-                exception_message = f"""\
+                exception_message = """\
 An unexpected Exception occurred during data docs rendering.  Because of this error, certain parts of data docs will \
 not be rendered properly and/or may not appear altogether.  Please use the trace, included in this message, to \
 diagnose and repair the underlying issue.  Detailed information follows:
@@ -163,9 +157,7 @@ diagnose and repair the underlying issue.  Detailed information follows:
                     **{
                         "content_block_type": "string_template",
                         "string_template": {
-                            "template": "Type: {column_type}".format(
-                                column_type=column_type
-                            ),
+                            "template": f"Type: {column_type}",
                             "tooltip": {
                                 "content": "expect_column_values_to_be_of_type <br>expect_column_values_to_be_in_type_list",
                             },
@@ -185,7 +177,7 @@ diagnose and repair the underlying issue.  Detailed information follows:
         )
 
     @classmethod
-    def _render_expectation_types(cls, evrs, content_blocks):
+    def _render_expectation_types(cls, evrs, content_blocks) -> None:
         # NOTE: The evr-fetching function is an kinda similar to the code other_section_
         # renderer.ProfilingResultsOverviewSectionRenderer._render_expectation_types
 
@@ -402,7 +394,7 @@ diagnose and repair the underlying issue.  Detailed information follows:
         return ExceptionListContentBlockRenderer.render(evrs, include_column_name=False)
 
     @classmethod
-    def _render_unrecognized(cls, evrs, content_blocks):
+    def _render_unrecognized(cls, evrs, content_blocks) -> None:
         unrendered_blocks = []
         new_block = None
         for evr in evrs:
@@ -437,7 +429,7 @@ diagnose and repair the underlying issue.  Detailed information follows:
 
 
 class ValidationResultsColumnSectionRenderer(ColumnSectionRenderer):
-    def __init__(self, table_renderer=None):
+    def __init__(self, table_renderer=None) -> None:
         super().__init__()
         if table_renderer is None:
             table_renderer = {
@@ -500,7 +492,7 @@ class ValidationResultsColumnSectionRenderer(ColumnSectionRenderer):
 
 
 class ExpectationSuiteColumnSectionRenderer(ColumnSectionRenderer):
-    def __init__(self, bullet_list_renderer=None):
+    def __init__(self, bullet_list_renderer=None) -> None:
         super().__init__()
         if bullet_list_renderer is None:
             bullet_list_renderer = {

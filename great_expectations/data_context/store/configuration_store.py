@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Optional, Union
 
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
@@ -10,6 +10,7 @@ from great_expectations.data_context.store.tuple_store_backend import TupleStore
 from great_expectations.data_context.types.base import BaseYamlConfig
 from great_expectations.data_context.types.resource_identifiers import (
     ConfigurationIdentifier,
+    GeCloudIdentifier,
 )
 from great_expectations.data_context.util import load_class
 from great_expectations.util import (
@@ -41,7 +42,7 @@ class ConfigurationStore(Store):
         store_backend: Optional[dict] = None,
         overwrite_existing: bool = False,
         runtime_environment: Optional[dict] = None,
-    ):
+    ) -> None:
         if not issubclass(self._configuration_class, BaseYamlConfig):
             raise ge_exceptions.DataContextError(
                 "Invalid configuration: A configuration_class needs to inherit from the BaseYamlConfig class."
@@ -62,8 +63,8 @@ class ConfigurationStore(Store):
             # Store Backend Class was loaded successfully; verify that it is of a correct subclass.
             if issubclass(store_backend_class, TupleStoreBackend):
                 # Provide defaults for this common case
-                store_backend["filepath_template"] = store_backend.get(
-                    "filepath_template", "{0}.yml"
+                store_backend["filepath_suffix"] = store_backend.get(
+                    "filepath_suffix", ".yml"
                 )
 
         super().__init__(
@@ -82,7 +83,7 @@ class ConfigurationStore(Store):
             "module_name": self.__class__.__module__,
             "class_name": self.__class__.__name__,
         }
-        filter_properties_dict(properties=self._config, inplace=True)
+        filter_properties_dict(properties=self._config, clean_falsy=True, inplace=True)
 
         self._overwrite_existing = overwrite_existing
 
@@ -90,14 +91,18 @@ class ConfigurationStore(Store):
         return self.store_backend.remove_key(key)
 
     def serialize(self, key, value):
+        if self.ge_cloud_mode:
+            # GeCloudStoreBackend expects a json str
+            config_schema = value.get_schema_class()()
+            return config_schema.dump(value)
         return value.to_yaml_str()
 
     def deserialize(self, key, value):
-        config_commented_map_from_yaml: CommentedMap = yaml.load(value)
+        config = value
+        if isinstance(value, str):
+            config: CommentedMap = yaml.load(value)
         try:
-            return self._configuration_class.from_commented_map(
-                commented_map=config_commented_map_from_yaml
-            )
+            return self._configuration_class.from_commented_map(commented_map=config)
         except ge_exceptions.InvalidBaseYamlConfigError:
             # Just to be explicit about what we intended to catch
             raise
@@ -107,7 +112,7 @@ class ConfigurationStore(Store):
         return self._overwrite_existing
 
     @overwrite_existing.setter
-    def overwrite_existing(self, overwrite_existing: bool):
+    def overwrite_existing(self, overwrite_existing: bool) -> None:
         self._overwrite_existing = overwrite_existing
 
     @property
@@ -122,7 +127,7 @@ class ConfigurationStore(Store):
             print("Checking for existing keys...")
 
         report_object["keys"] = sorted(
-            [key.configuration_key for key in self.list_keys()]
+            key.configuration_key for key in self.list_keys()
         )
 
         report_object["len_keys"] = len(report_object["keys"])
@@ -134,7 +139,7 @@ class ConfigurationStore(Store):
             else:
                 print(f"\t{len_keys} keys found:")
                 for key in report_object["keys"][:10]:
-                    print("\t\t" + str(key))
+                    print(f"		{str(key)}")
             if len_keys > 10:
                 print("\t\t...")
             print()
@@ -143,5 +148,21 @@ class ConfigurationStore(Store):
 
         return report_object
 
-    def serialization_self_check(self, pretty_print: bool):
+    def serialization_self_check(self, pretty_print: bool) -> None:
         raise NotImplementedError
+
+    @staticmethod
+    def determine_key(
+        name: Optional[str], ge_cloud_id: Optional[str]
+    ) -> Union[GeCloudIdentifier, ConfigurationIdentifier]:
+        assert bool(name) ^ bool(
+            ge_cloud_id
+        ), "Must provide either name or ge_cloud_id."
+
+        key: Union[GeCloudIdentifier, ConfigurationIdentifier]
+        if ge_cloud_id:
+            key = GeCloudIdentifier(resource_type="contract", ge_cloud_id=ge_cloud_id)
+        else:
+            key = ConfigurationIdentifier(configuration_key=name)
+
+        return key

@@ -1,6 +1,54 @@
+import re
+from glob import glob
+
+import pkg_resources
 from setuptools import find_packages, setup
 
 import versioneer
+
+
+def get_extras_require():
+    results = {}
+    extra_key_mapping = {
+        "aws_secrets": "boto",
+        "azure_secrets": "azure",
+        "gcp": "bigquery",
+        "s3": "boto",
+    }
+    sqla_keys = (
+        "athena",
+        "bigquery",
+        "dremio",
+        "mssql",
+        "mysql",
+        "postgresql",
+        "redshift",
+        "snowflake",
+        "teradata",
+        "trino",
+    )
+    ignore_keys = ("contrib", "sqlalchemy", "test")
+    rx_fname_part = re.compile(r"requirements-dev-(.*).txt")
+    for fname in sorted(glob("requirements-dev-*.txt")):
+        key = rx_fname_part.match(fname).group(1)
+        if key in ignore_keys:
+            continue
+        with open(fname) as f:
+            parsed = [str(req) for req in pkg_resources.parse_requirements(f)]
+            results[key] = parsed
+
+    lite = results.pop("lite")
+    results["boto"] = [req for req in lite if req.startswith("boto")]
+    results["sqlalchemy"] = [req for req in lite if req.startswith("sqlalchemy")]
+
+    for new_key, existing_key in extra_key_mapping.items():
+        results[new_key] = results[existing_key]
+    for key in sqla_keys:
+        results[key] += results["sqlalchemy"]
+
+    results.pop("boto")
+    return results
+
 
 # Parse requirements.txt
 with open("requirements.txt") as f:
@@ -20,22 +68,7 @@ config = {
     "version": versioneer.get_version(),
     "cmdclass": versioneer.get_cmdclass(),
     "install_requires": required,
-    "extras_require": {
-        "spark": ["pyspark>=2.3.2"],
-        "sqlalchemy": ["sqlalchemy>=1.3.16"],
-        "airflow": ["apache-airflow[s3]>=1.9.0", "boto3>=1.7.3"],
-        "gcp": [
-            "google-cloud>=0.34.0",
-            "google-cloud-storage>=1.28.0",
-            "google-cloud-secret-manager>=1.0.0",
-            "pybigquery==0.4.15",
-        ],
-        "redshift": ["psycopg2>=2.8"],
-        "s3": ["boto3>=1.14"],
-        "aws_secrets": ["boto3>=1.8.7"],
-        "azure_secrets": ["azure-identity>=1.0.0", "azure-keyvault-secrets>=4.0.0"],
-        "snowflake": ["snowflake-sqlalchemy>=1.2"],
-    },
+    "extras_require": get_extras_require(),
     "packages": find_packages(exclude=["contrib*", "docs*", "tests*", "examples*"]),
     "entry_points": {
         "console_scripts": ["great_expectations=great_expectations.cli:main"]
@@ -55,9 +88,9 @@ config = {
         "Topic :: Software Development :: Testing",
         "License :: OSI Approved :: Apache Software License",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
     ],
 }
 

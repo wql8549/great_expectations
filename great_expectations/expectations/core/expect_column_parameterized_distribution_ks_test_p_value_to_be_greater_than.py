@@ -1,11 +1,6 @@
 from great_expectations.expectations.expectation import TableExpectation
 from great_expectations.expectations.util import render_evaluation_parameter_string
 from great_expectations.render.renderer.renderer import renderer
-from great_expectations.render.types import (
-    RenderedStringTemplateContent,
-    RenderedTableContent,
-)
-from great_expectations.render.util import num_to_str, substitute_none_for_missing
 
 
 class ExpectColumnParameterizedDistributionKsTestPValueToBeGreaterThan(
@@ -16,7 +11,6 @@ class ExpectColumnParameterizedDistributionKsTestPValueToBeGreaterThan(
     # This dictionary contains metadata for display in the public gallery
     library_metadata = {
         "maturity": "production",
-        "package": "great_expectations",
         "tags": [
             "core expectation",
             "column aggregate expectation",
@@ -29,6 +23,7 @@ class ExpectColumnParameterizedDistributionKsTestPValueToBeGreaterThan(
     metric_dependencies = tuple()
     success_keys = ()
     default_kwarg_values = {}
+    args_keys = ()
 
     @classmethod
     @renderer(renderer_type="renderer.prescriptive")
@@ -40,7 +35,7 @@ class ExpectColumnParameterizedDistributionKsTestPValueToBeGreaterThan(
         language=None,
         runtime_configuration=None,
         **kwargs,
-    ):
+    ) -> None:
         pass
 
     @classmethod
@@ -52,5 +47,5 @@ class ExpectColumnParameterizedDistributionKsTestPValueToBeGreaterThan(
         language=None,
         runtime_configuration=None,
         **kwargs,
-    ):
+    ) -> None:
         pass

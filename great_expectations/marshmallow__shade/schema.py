@@ -152,7 +152,7 @@ class SchemaMeta(type):
         """
         return dict_cls(inherited_fields + cls_fields)
 
-    def __init__(cls, name, bases, attrs):
+    def __init__(cls, name, bases, attrs) -> None:
         super().__init__(name, bases, attrs)
         if name and cls.opts.register:
             class_registry.register(name, cls)
@@ -201,7 +201,7 @@ class SchemaMeta(type):
 class SchemaOpts:
     """class Meta options for the :class:`Schema`. Defines defaults."""
 
-    def __init__(self, meta, ordered: bool = False):
+    def __init__(self, meta, ordered: bool = False) -> None:
         self.fields = getattr(meta, "fields", ())
         if not isinstance(self.fields, (list, tuple)):
             raise ValueError("`fields` option must be a list or tuple.")
@@ -377,8 +377,8 @@ class Schema(base.SchemaABC, metaclass=SchemaMeta):
         load_only: types.StrSequenceOrSet = (),
         dump_only: types.StrSequenceOrSet = (),
         partial: typing.Union[bool, types.StrSequenceOrSet] = False,
-        unknown: str = None
-    ):
+        unknown: str = None,
+    ) -> None:
         # Raise error if only or exclude is passed as string, not list of strings
         if only is not None and not is_collection(only):
             raise StringNotCollectionError('"only" should be a list of strings')
@@ -409,9 +409,7 @@ class Schema(base.SchemaABC, metaclass=SchemaMeta):
         self.error_messages = messages
 
     def __repr__(self) -> str:
-        return "<{ClassName}(many={self.many})>".format(
-            ClassName=self.__class__.__name__, self=self
-        )
+        return f"<{self.__class__.__name__}(many={self.many})>"
 
     @property
     def dict_class(self) -> type:
@@ -426,7 +424,7 @@ class Schema(base.SchemaABC, metaclass=SchemaMeta):
         cls,
         fields: typing.Dict[str, typing.Union[ma_fields.Field, type]],
         *,
-        name: str = "GeneratedSchema"
+        name: str = "GeneratedSchema",
     ) -> type:
         """Generate a `Schema` class given a dictionary of fields.
 
@@ -457,7 +455,7 @@ class Schema(base.SchemaABC, metaclass=SchemaMeta):
 
     def handle_error(
         self, error: ValidationError, data: typing.Any, *, many: bool, **kwargs
-    ):
+    ) -> None:
         """Custom error handler function for the schema.
 
         :param error: The `ValidationError` raised during (de)serialization.
@@ -604,7 +602,7 @@ class Schema(base.SchemaABC, metaclass=SchemaMeta):
         many: bool = False,
         partial=False,
         unknown=RAISE,
-        index=None
+        index=None,
     ) -> typing.Union[_T, typing.List[_T]]:
         """Deserialize ``data``.
 
@@ -663,7 +661,7 @@ class Schema(base.SchemaABC, metaclass=SchemaMeta):
                 d_kwargs = {}
                 # Allow partial loading of nested schemas.
                 if partial_is_collection:
-                    prefix = field_name + "."
+                    prefix = f"{field_name}."
                     len_prefix = len(prefix)
                     sub_partial = [
                         f[len_prefix:] for f in partial if f.startswith(prefix)
@@ -710,7 +708,7 @@ class Schema(base.SchemaABC, metaclass=SchemaMeta):
         *,
         many: bool = None,
         partial: typing.Union[bool, types.StrSequenceOrSet] = None,
-        unknown: str = None
+        unknown: str = None,
     ):
         """Deserialize a data structure to an object defined by this Schema's fields.
 
@@ -743,7 +741,7 @@ class Schema(base.SchemaABC, metaclass=SchemaMeta):
         many: bool = None,
         partial: typing.Union[bool, types.StrSequenceOrSet] = None,
         unknown: str = None,
-        **kwargs
+        **kwargs,
     ):
         """Same as :meth:`load`, except it takes a JSON string as input.
 
@@ -778,8 +776,8 @@ class Schema(base.SchemaABC, metaclass=SchemaMeta):
         many,
         partial,
         pass_original,
-        index=None
-    ):
+        index=None,
+    ) -> None:
         try:
             if pass_original:  # Pass original, raw data (before unmarshalling)
                 validator_func(output, original_data, partial=partial, many=many)
@@ -793,7 +791,7 @@ class Schema(base.SchemaABC, metaclass=SchemaMeta):
         data: typing.Mapping,
         *,
         many: bool = None,
-        partial: typing.Union[bool, types.StrSequenceOrSet] = None
+        partial: typing.Union[bool, types.StrSequenceOrSet] = None,
     ) -> typing.Dict[str, typing.List[str]]:
         """Validate `data` against the schema, returning a dictionary of
         validation errors.
@@ -827,7 +825,7 @@ class Schema(base.SchemaABC, metaclass=SchemaMeta):
         many: bool = None,
         partial: typing.Union[bool, types.StrSequenceOrSet] = None,
         unknown: str = None,
-        postprocess: bool = True
+        postprocess: bool = True,
     ):
         """Deserialize `data`, returning the deserialized result.
         This method is private API.
@@ -983,7 +981,7 @@ class Schema(base.SchemaABC, metaclass=SchemaMeta):
             invalid_fields |= self.exclude - available_field_names
 
         if invalid_fields:
-            message = "Invalid fields for {}: {}.".format(self, invalid_fields)
+            message = f"Invalid fields for {self}: {invalid_fields}."
             raise ValueError(message)
 
         fields_dict = self.dict_class()
@@ -1088,7 +1086,7 @@ class Schema(base.SchemaABC, metaclass=SchemaMeta):
         *,
         many: bool,
         original_data,
-        partial: typing.Union[bool, types.StrSequenceOrSet]
+        partial: typing.Union[bool, types.StrSequenceOrSet],
     ):
         # This has to invert the order of the dump processors, so run the pass_many
         # processors first.
@@ -1110,7 +1108,9 @@ class Schema(base.SchemaABC, metaclass=SchemaMeta):
         )
         return data
 
-    def _invoke_field_validators(self, *, error_store: ErrorStore, data, many: bool):
+    def _invoke_field_validators(
+        self, *, error_store: ErrorStore, data, many: bool
+    ) -> None:
         for attr_name in self._hooks[VALIDATES]:
             validator = getattr(self, attr_name)
             validator_kwargs = validator.__marshmallow_hook__[VALIDATES]
@@ -1121,9 +1121,7 @@ class Schema(base.SchemaABC, metaclass=SchemaMeta):
             except KeyError as error:
                 if field_name in self.declared_fields:
                     continue
-                raise ValueError(
-                    '"{}" field does not exist.'.format(field_name)
-                ) from error
+                raise ValueError(f'"{field_name}" field does not exist.') from error
 
             data_key = (
                 field_obj.data_key if field_obj.data_key is not None else field_name
@@ -1168,8 +1166,8 @@ class Schema(base.SchemaABC, metaclass=SchemaMeta):
         original_data,
         many: bool,
         partial: typing.Union[bool, types.StrSequenceOrSet],
-        field_errors: bool = False
-    ):
+        field_errors: bool = False,
+    ) -> None:
         for attr_name in self._hooks[(VALIDATES_SCHEMA, pass_many)]:
             validator = getattr(self, attr_name)
             validator_kwargs = validator.__marshmallow_hook__[
@@ -1210,7 +1208,7 @@ class Schema(base.SchemaABC, metaclass=SchemaMeta):
         data,
         many: bool,
         original_data=None,
-        **kwargs
+        **kwargs,
     ):
         key = (tag, pass_many)
         for attr_name in self._hooks[key]:

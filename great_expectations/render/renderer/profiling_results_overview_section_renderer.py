@@ -1,7 +1,8 @@
 import warnings
 from collections import Counter, defaultdict
 
-from great_expectations.profile.base import ProfilerTypeMapping
+from great_expectations.core.profiler_types_mapping import ProfilerTypeMapping
+from great_expectations.render.renderer.renderer import Renderer
 from great_expectations.render.types import (
     CollapseContent,
     RenderedBulletListContent,
@@ -11,8 +12,6 @@ from great_expectations.render.types import (
     RenderedTableContent,
 )
 
-from .renderer import Renderer
-
 
 class ProfilingResultsOverviewSectionRenderer(Renderer):
     @classmethod
@@ -21,7 +20,7 @@ class ProfilingResultsOverviewSectionRenderer(Renderer):
         content_blocks = []
         # NOTE: I don't love the way this builds content_blocks as a side effect.
         # The top-level API is clean and scannable, but the function internals are counterintutitive and hard to test.
-        # I wonder if we can enable something like jquery chaining for this. Tha would be concise AND testable.
+        # I wonder if we can enable something like jquery chaining for this. That would be concise AND testable.
         # Pressing on for now...
         cls._render_header(evrs, content_blocks)
         cls._render_dataset_info(evrs, content_blocks)
@@ -34,7 +33,7 @@ class ProfilingResultsOverviewSectionRenderer(Renderer):
         )
 
     @classmethod
-    def _render_header(cls, evrs, content_blocks):
+    def _render_header(cls, evrs, content_blocks) -> None:
         content_blocks.append(
             RenderedHeaderContent(
                 **{
@@ -58,7 +57,7 @@ class ProfilingResultsOverviewSectionRenderer(Renderer):
         )
 
     @classmethod
-    def _render_dataset_info(cls, evrs, content_blocks):
+    def _render_dataset_info(cls, evrs, content_blocks) -> None:
         expect_table_row_count_to_be_between_evr = cls._find_evr_by_type(
             evrs["results"], "expect_table_row_count_to_be_between"
         )
@@ -122,7 +121,7 @@ class ProfilingResultsOverviewSectionRenderer(Renderer):
         )
 
     @classmethod
-    def _render_variable_types(cls, evrs, content_blocks):
+    def _render_variable_types(cls, evrs, content_blocks) -> None:
 
         column_types = cls._get_column_types(evrs)
         # TODO: check if we have the information to make this statement. Do all columns have type expectations?
@@ -155,7 +154,7 @@ class ProfilingResultsOverviewSectionRenderer(Renderer):
         )
 
     @classmethod
-    def _render_expectation_types(cls, evrs, content_blocks):
+    def _render_expectation_types(cls, evrs, content_blocks) -> None:
 
         type_counts = defaultdict(int)
 
@@ -305,13 +304,11 @@ class ProfilingResultsOverviewSectionRenderer(Renderer):
         # assume 100.0 missing for columns where ["result"]["unexpected_percent"] is not available
         return "{:.2f}%".format(
             sum(
-                [
-                    evr.result["unexpected_percent"]
-                    if "unexpected_percent" in evr.result
-                    and evr.result["unexpected_percent"] is not None
-                    else 100.0
-                    for evr in expect_column_values_to_not_be_null_evrs
-                ]
+                evr.result["unexpected_percent"]
+                if "unexpected_percent" in evr.result
+                and evr.result["unexpected_percent"] is not None
+                else 100.0
+                for evr in expect_column_values_to_not_be_null_evrs
             )
             / len(columns)
         )

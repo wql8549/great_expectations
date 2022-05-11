@@ -29,7 +29,7 @@ class NoOpTemplate:
 
 
 class PrettyPrintTemplate:
-    def render(self, document, indent=2):
+    def render(self, document, indent=2) -> None:
         print(json.dumps(document, indent=indent))
 
 
@@ -53,7 +53,9 @@ class DefaultJinjaView:
 
     _template = NoOpTemplate
 
-    def __init__(self, custom_styles_directory=None, custom_views_directory=None):
+    def __init__(
+        self, custom_styles_directory=None, custom_views_directory=None
+    ) -> None:
         self.custom_styles_directory = custom_styles_directory
         self.custom_views_directory = custom_views_directory
 
@@ -119,9 +121,9 @@ class DefaultJinjaView:
             datetime_iso_string = datetime.datetime.now(datetime.timezone.utc).strftime(
                 "%Y%m%dT%H%M%S.%fZ"
             )
-            url += "?d=" + datetime_iso_string
+            url += f"?d={datetime_iso_string}"
         if data_context_id:
-            url = url + "&dataContextId=" if add_datetime else url + "?dataContextId="
+            url = f"{url}&dataContextId=" if add_datetime else f"{url}?dataContextId="
             url += data_context_id
         return url
 
@@ -158,7 +160,7 @@ class DefaultJinjaView:
                 ):
                     new_content_block_id = None
                     if content_block_id:
-                        new_content_block_id = content_block_id + "-" + str(idx)
+                        new_content_block_id = f"{content_block_id}-{str(idx)}"
                     rendered_block += self.render_content_block(
                         jinja_context,
                         content_block_el,
@@ -169,7 +171,7 @@ class DefaultJinjaView:
                     if render_to_markdown:
                         rendered_block += str(content_block_el)
                     else:
-                        rendered_block += "<span>" + str(content_block_el) + "</span>"
+                        rendered_block += f"<span>{str(content_block_el)}</span>"
             return rendered_block
         elif not isinstance(content_block, dict):
             return content_block
@@ -194,7 +196,9 @@ class DefaultJinjaView:
                 jinja_context, content_block=content_block, index=index
             )
 
-    def render_dict_values(self, context, dict_, index=None, content_block_id=None):
+    def render_dict_values(
+        self, context, dict_, index=None, content_block_id=None
+    ) -> None:
         for key, val in dict_.items():
             if key.startswith("_"):
                 continue
@@ -255,7 +259,7 @@ class DefaultJinjaView:
         else:
             if type(class_list) == str:
                 raise TypeError("classes must be a list, not a string.")
-            class_str = 'class="' + " ".join(class_list) + '" '
+            class_str = f"class=\"{' '.join(class_list)}\" "
 
         attribute_dict = styling.get("attributes", None)
         if attribute_dict is None:
@@ -263,14 +267,14 @@ class DefaultJinjaView:
         else:
             attribute_str = ""
             for k, v in attribute_dict.items():
-                attribute_str += k + '="' + v + '" '
+                attribute_str += f'{k}="{v}" '
 
         style_dict = styling.get("styles", None)
         if style_dict is None:
             style_str = ""
         else:
             style_str = 'style="'
-            style_str += " ".join([k + ":" + v + ";" for k, v in style_dict.items()])
+            style_str += " ".join([f"{k}:{v};" for k, v in style_dict.items()])
             style_str += '" '
 
         styling_string = pTemplate("$classes$attributes$style").substitute(
@@ -430,14 +434,14 @@ class DefaultJinjaView:
             )
         ).safe_substitute(template.get("params", {}))
 
-    def _validate_document(self, document):
+    def _validate_document(self, document) -> None:
         raise NotImplementedError
 
 
 class DefaultJinjaPageView(DefaultJinjaView):
     _template = "page.j2"
 
-    def _validate_document(self, document):
+    def _validate_document(self, document) -> None:
         assert isinstance(document, RenderedDocumentContent)
 
 
@@ -448,7 +452,7 @@ class DefaultJinjaIndexPageView(DefaultJinjaPageView):
 class DefaultJinjaSectionView(DefaultJinjaView):
     _template = "section.j2"
 
-    def _validate_document(self, document):
+    def _validate_document(self, document) -> None:
         assert isinstance(
             document["section"], dict
         )  # For now low-level views take dicts
@@ -457,7 +461,7 @@ class DefaultJinjaSectionView(DefaultJinjaView):
 class DefaultJinjaComponentView(DefaultJinjaView):
     _template = "component.j2"
 
-    def _validate_document(self, document):
+    def _validate_document(self, document) -> None:
         assert isinstance(
             document["content_block"], dict
         )  # For now low-level views take dicts

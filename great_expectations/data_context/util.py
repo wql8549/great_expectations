@@ -7,8 +7,11 @@ import os
 import re
 import warnings
 from collections import OrderedDict
-from typing import Optional
+from functools import lru_cache
+from typing import Any, Optional
 from urllib.parse import urlparse
+
+from great_expectations.types import safe_deep_copy
 
 try:
     from azure.identity import DefaultAzureCredential
@@ -32,13 +35,7 @@ except ImportError:
 import pyparsing as pp
 
 import great_expectations.exceptions as ge_exceptions
-from great_expectations.data_context.types.base import (
-    CheckpointConfig,
-    CheckpointConfigSchema,
-    DataContextConfig,
-    DataContextConfigDefaults,
-    DataContextConfigSchema,
-)
+from great_expectations.data_context.types.base import BaseYamlConfig
 from great_expectations.util import load_class, verify_dynamic_loading_support
 
 try:
@@ -233,6 +230,7 @@ See https://great-expectations.readthedocs.io/en/latest/reference/data_context_r
     return template_str
 
 
+@lru_cache(maxsize=None)
 def substitute_value_from_secret_store(value):
     """
     This method takes a value, tries to parse the value to fetch a secret from a secret manager
@@ -454,13 +452,11 @@ def substitute_all_config_variables(
 
     :param data:
     :param replace_variables_dict:
+    :param dollar_sign_escape_string: a reserved character for specifying parameters
     :return: a dictionary with all the variables replaced with their values
     """
-    if isinstance(data, DataContextConfig):
-        data = DataContextConfigSchema().dump(data)
-
-    if isinstance(data, CheckpointConfig):
-        data = CheckpointConfigSchema().dump(data)
+    if isinstance(data, BaseYamlConfig):
+        data = (data.__class__.get_schema_class())().dump(data)
 
     if isinstance(data, dict) or isinstance(data, OrderedDict):
         return {
@@ -513,14 +509,6 @@ def parse_substitution_variable(substitution_variable: str) -> Optional[str]:
         return None
 
 
-def default_checkpoints_exist(directory_path: str) -> bool:
-    checkpoints_directory_path: str = os.path.join(
-        directory_path,
-        DataContextConfigDefaults.DEFAULT_CHECKPOINT_STORE_BASE_DIRECTORY_RELATIVE_NAME.value,
-    )
-    return os.path.isdir(checkpoints_directory_path)
-
-
 class PasswordMasker:
     """
     Used to mask passwords in Datasources. Does not mask sqlite urls.
@@ -534,8 +522,14 @@ class PasswordMasker:
 
     MASKED_PASSWORD_STRING = "***"
 
-    @staticmethod
-    def mask_db_url(url: str, use_urlparse: bool = False, **kwargs) -> str:
+    # values with the following keys will be processed with cls.mask_db_url:
+    URL_KEYS = {"connection_string", "url"}
+
+    # values with these keys will be directly replaced with cls.MASKED_PASSWORD_STRING:
+    PASSWORD_KEYS = {"access_token", "password"}
+
+    @classmethod
+    def mask_db_url(cls, url: str, use_urlparse: bool = False, **kwargs) -> str:
         """
         Mask password in database url.
         Uses sqlalchemy engine parsing if sqlalchemy is installed, otherwise defaults to using urlparse from the stdlib which does not handle kwargs.
@@ -548,36 +542,77 @@ class PasswordMasker:
             url with password masked e.g. "postgresql+psycopg2://username:***@host:65432/database"
         """
         if sa is not None and use_urlparse is False:
-            engine = sa.create_engine(url, **kwargs)
-            return engine.url.__repr__()
+            try:
+                engine = sa.create_engine(url, **kwargs)
+                return engine.url.__repr__()
+            # Account for the edge case where we have SQLAlchemy in our env but haven't installed the appropriate dialect to match the input URL
+            except Exception as e:
+                logger.warning(
+                    f"Something went wrong when trying to use SQLAlchemy to obfuscate URL: {e}"
+                )
         else:
             warnings.warn(
                 "SQLAlchemy is not installed, using urlparse to mask database url password which ignores **kwargs."
             )
+        return cls._mask_db_url_no_sa(url=url)
 
-            # oracle+cx_oracle does not parse well using urlparse, parse as oracle then swap back
-            replace_prefix = None
-            if url.startswith("oracle+cx_oracle"):
-                replace_prefix = {"original": "oracle+cx_oracle", "temporary": "oracle"}
-                url = url.replace(
-                    replace_prefix["original"], replace_prefix["temporary"]
-                )
+    @classmethod
+    def _mask_db_url_no_sa(cls, url: str) -> str:
+        # oracle+cx_oracle does not parse well using urlparse, parse as oracle then swap back
+        replace_prefix = None
+        if url.startswith("oracle+cx_oracle"):
+            replace_prefix = {"original": "oracle+cx_oracle", "temporary": "oracle"}
+            url = url.replace(replace_prefix["original"], replace_prefix["temporary"])
 
-            parsed_url = urlparse(url)
+        parsed_url = urlparse(url)
 
-            # Do not parse sqlite
-            if parsed_url.scheme == "sqlite":
-                return url
+        # Do not parse sqlite
+        if parsed_url.scheme == "sqlite":
+            return url
 
-            colon = ":" if parsed_url.port is not None else ""
-            masked_url = (
-                f"{parsed_url.scheme}://{parsed_url.username}:{PasswordMasker.MASKED_PASSWORD_STRING}"
-                f"@{parsed_url.hostname}{colon}{parsed_url.port or ''}{parsed_url.path or ''}"
+        colon = ":" if parsed_url.port is not None else ""
+        masked_url = (
+            f"{parsed_url.scheme}://{parsed_url.username}:{cls.MASKED_PASSWORD_STRING}"
+            f"@{parsed_url.hostname}{colon}{parsed_url.port or ''}{parsed_url.path or ''}"
+        )
+
+        if replace_prefix is not None:
+            masked_url = masked_url.replace(
+                replace_prefix["temporary"], replace_prefix["original"]
             )
 
-            if replace_prefix is not None:
-                masked_url = masked_url.replace(
-                    replace_prefix["temporary"], replace_prefix["original"]
-                )
+        return masked_url
 
-            return masked_url
+    @classmethod
+    def sanitize_config(cls, config: dict) -> dict:
+        """
+        Mask sensitive fields in a Dict.
+        """
+
+        # be defensive, since it would be logical to expect this method works with DataContextConfig
+        if not isinstance(config, dict):
+            raise TypeError(
+                f"PasswordMasker.sanitize_config expects param `config` "
+                + f"to be of type Dict, not of type {type(config)}"
+            )
+
+        config_copy = safe_deep_copy(config)  # be immutable
+
+        def recursive_cleaner_method(config: Any) -> None:
+            if isinstance(config, dict):
+                for key, val in config.items():
+                    if not isinstance(val, str):
+                        recursive_cleaner_method(val)
+                    elif key in cls.URL_KEYS:
+                        config[key] = cls.mask_db_url(val)
+                    elif key in cls.PASSWORD_KEYS:
+                        config[key] = cls.MASKED_PASSWORD_STRING
+                    else:
+                        pass  # this string is not sensitive
+            elif isinstance(config, list):
+                for val in config:
+                    recursive_cleaner_method(val)
+
+        recursive_cleaner_method(config_copy)  # Perform anonymization in place
+
+        return config_copy

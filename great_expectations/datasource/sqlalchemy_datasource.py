@@ -1,11 +1,13 @@
 import datetime
 import logging
+import warnings
 from pathlib import Path
 from string import Template
-from urllib.parse import urlparse
 
 from great_expectations.core.batch import Batch, BatchMarkers
+from great_expectations.core.usage_statistics.events import UsageStatsEvents
 from great_expectations.core.util import nested_update
+from great_expectations.data_context.types.base import ConcurrencyConfig
 from great_expectations.dataset.sqlalchemy_dataset import SqlAlchemyBatchReference
 from great_expectations.datasource import LegacyDatasource
 from great_expectations.exceptions import (
@@ -14,6 +16,7 @@ from great_expectations.exceptions import (
 )
 from great_expectations.types import ClassConfig
 from great_expectations.types.configurations import classConfigSchema
+from great_expectations.util import get_sqlalchemy_url, import_make_url
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +24,8 @@ try:
     import sqlalchemy
     from sqlalchemy import create_engine
     from sqlalchemy.sql.elements import quoted_name
+
+    make_url = import_make_url()
 
 except ImportError:
     sqlalchemy = None
@@ -208,7 +213,7 @@ class SqlAlchemyDatasource(LegacyDatasource):
         credentials=None,
         batch_kwargs_generators=None,
         **kwargs
-    ):
+    ) -> None:
         if not sqlalchemy:
             raise DatasourceInitializationError(
                 name, "ModuleNotFoundError: No module named 'sqlalchemy'"
@@ -235,34 +240,44 @@ class SqlAlchemyDatasource(LegacyDatasource):
             credentials = {}
 
         try:
-            # if an engine was provided, use that
+            # If an engine was provided, use that.
             if "engine" in kwargs:
                 self.engine = kwargs.pop("engine")
 
-            # if a connection string or url was provided, use that
-            elif "connection_string" in kwargs:
-                connection_string = kwargs.pop("connection_string")
-                self.engine = create_engine(connection_string, **kwargs)
-                connection = self.engine.connect()
-                connection.close()
-            elif "url" in credentials:
-                url = credentials.pop("url")
-                self.drivername = urlparse(url).scheme
-                self.engine = create_engine(url, **kwargs)
-                connection = self.engine.connect()
-                connection.close()
-
-            # Otherwise, connect using remaining kwargs
             else:
-                (
-                    options,
-                    create_engine_kwargs,
-                    drivername,
-                ) = self._get_sqlalchemy_connection_options(**kwargs)
-                self.drivername = drivername
-                self.engine = create_engine(options, **create_engine_kwargs)
-                connection = self.engine.connect()
-                connection.close()
+                concurrency: ConcurrencyConfig
+                if data_context is None or data_context.concurrency is None:
+                    concurrency = ConcurrencyConfig()
+                else:
+                    concurrency = data_context.concurrency
+
+                concurrency.add_sqlalchemy_create_engine_parameters(kwargs)
+
+                # If a connection string or url was provided, use that.
+                if "connection_string" in kwargs:
+                    connection_string = kwargs.pop("connection_string")
+                    self.engine = create_engine(connection_string, **kwargs)
+                    connection = self.engine.connect()
+                    connection.close()
+                elif "url" in credentials:
+                    url = credentials.pop("url")
+                    parsed_url = make_url(url)
+                    self.drivername = parsed_url.drivername
+                    self.engine = create_engine(url, **kwargs)
+                    connection = self.engine.connect()
+                    connection.close()
+
+                # Otherwise, connect using remaining kwargs.
+                else:
+                    (
+                        options,
+                        create_engine_kwargs,
+                        drivername,
+                    ) = self._get_sqlalchemy_connection_options(**kwargs)
+                    self.drivername = drivername
+                    self.engine = create_engine(options, **create_engine_kwargs)
+                    connection = self.engine.connect()
+                    connection.close()
 
             # since we switched to lazy loading of Datasources when we initialise a DataContext,
             # the dialect of SQLAlchemy Datasources cannot be obtained reliably when we send
@@ -273,11 +288,9 @@ class SqlAlchemyDatasource(LegacyDatasource):
             ):
                 handler = data_context._usage_statistics_handler
                 handler.send_usage_message(
-                    event="datasource.sqlalchemy.connect",
+                    event=UsageStatsEvents.DATASOURCE_SQLALCHEMY_CONNECT.value,
                     event_payload={
-                        "anonymized_name": handler._datasource_anonymizer.anonymize(
-                            self.name
-                        ),
+                        "anonymized_name": handler.anonymizer.anonymize(obj=self.name),
                         "sqlalchemy_dialect": self.engine.name,
                     },
                     success=True,
@@ -321,7 +334,7 @@ class SqlAlchemyDatasource(LegacyDatasource):
                     drivername, credentials
                 )
             else:
-                options = sqlalchemy.engine.url.URL(drivername, **credentials)
+                options = get_sqlalchemy_url(drivername, **credentials)
         return options, create_engine_kwargs, drivername
 
     def _get_sqlalchemy_key_pair_auth_url(self, drivername, credentials):
@@ -357,9 +370,7 @@ class SqlAlchemyDatasource(LegacyDatasource):
         credentials_driver_name = credentials.pop("drivername", None)
         create_engine_kwargs = {"connect_args": {"private_key": pkb}}
         return (
-            sqlalchemy.engine.url.URL(
-                drivername or credentials_driver_name, **credentials
-            ),
+            get_sqlalchemy_url(drivername or credentials_driver_name, **credentials),
             create_engine_kwargs,
         )
 
@@ -374,8 +385,16 @@ class SqlAlchemyDatasource(LegacyDatasource):
         )
 
         if "bigquery_temp_table" in batch_kwargs:
-            query_support_table_name = batch_kwargs.get("bigquery_temp_table")
-        elif "snowflake_transient_table" in batch_kwargs:
+            # deprecated-v0.15.3
+            warnings.warn(
+                "BigQuery tables that are created as the result of a query are no longer created as "
+                "permanent tables. Thus, a named permanent table through the `bigquery_temp_table`"
+                "parameter is not required. The `bigquery_temp_table` parameter is deprecated as of"
+                "v0.15.3 and will be removed in v0.18.",
+                DeprecationWarning,
+            )
+
+        if "snowflake_transient_table" in batch_kwargs:
             # Snowflake can use either a transient or temp table, so we allow a table_name to be provided
             query_support_table_name = batch_kwargs.get("snowflake_transient_table")
         else:
@@ -407,12 +426,6 @@ class SqlAlchemyDatasource(LegacyDatasource):
             limit = batch_kwargs.get("limit")
             offset = batch_kwargs.get("offset")
             if limit is not None or offset is not None:
-                # AWS Athena does not support offset
-                if (
-                    offset is not None
-                    and self.engine.dialect.name.lower() == "awsathena"
-                ):
-                    raise NotImplementedError("AWS Athena does not support OFFSET.")
                 logger.info(
                     "Generating query from table batch_kwargs based on limit and offset"
                 )

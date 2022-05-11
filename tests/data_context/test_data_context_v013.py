@@ -2,16 +2,20 @@ import datetime
 import os
 import re
 
-import pandas as pd
 import pytest
 from ruamel.yaml import YAML
 
 from great_expectations import DataContext
 from great_expectations.core import ExpectationSuite
 from great_expectations.core.batch import Batch, RuntimeBatchRequest
+from great_expectations.core.config_peer import ConfigOutputModes
 from great_expectations.data_context import BaseDataContext
-from great_expectations.data_context.types.base import DataContextConfig
-from great_expectations.exceptions import BatchSpecError
+from great_expectations.data_context.types.base import (
+    DataContextConfig,
+    dataContextConfigSchema,
+)
+from great_expectations.data_context.util import file_relative_path
+from great_expectations.exceptions import ExecutionEngineError
 from great_expectations.execution_engine.pandas_batch_data import PandasBatchData
 from great_expectations.execution_engine.sqlalchemy_batch_data import (
     SqlAlchemyBatchData,
@@ -68,6 +72,42 @@ def basic_data_context_v013_config():
     )
 
 
+@pytest.fixture
+def data_context_with_runtime_sql_datasource_for_testing_get_batch(
+    sa,
+    empty_data_context,
+):
+    context: DataContext = empty_data_context
+    db_file_path: str = file_relative_path(
+        __file__,
+        os.path.join("..", "test_sets", "test_cases_for_sql_data_connector.db"),
+    )
+
+    datasource_config: str = f"""
+        class_name: Datasource
+
+        execution_engine:
+            class_name: SqlAlchemyExecutionEngine
+            connection_string: sqlite:///{db_file_path}
+
+        data_connectors:
+            my_runtime_data_connector:
+                module_name: great_expectations.datasource.data_connector
+                class_name: RuntimeDataConnector
+                batch_identifiers:
+                    - pipeline_stage_name
+                    - airflow_run_id
+    """
+
+    context.test_yaml_config(
+        name="my_runtime_sql_datasource", yaml_config=datasource_config
+    )
+
+    # noinspection PyProtectedMember
+    context._save_project_config()
+    return context
+
+
 def test_ConfigOnlyDataContext_v013__initialization(
     tmp_path_factory, basic_data_context_v013_config
 ):
@@ -89,10 +129,8 @@ def test_ConfigOnlyDataContext_v013__initialization(
                 filter(
                     lambda element: element,
                     sorted(
-                        [
-                            pattern.match(element) is not None
-                            for element in context.plugins_directory.split("/")[-3:]
-                        ]
+                        pattern.match(element) is not None
+                        for element in context.plugins_directory.split("/")[-3:]
                     ),
                 )
             )
@@ -171,16 +209,17 @@ def test_get_config(empty_data_context):
 
     # We can call get_config in several different modes
     assert type(context.get_config()) == DataContextConfig
-    assert type(context.get_config(mode="typed")) == DataContextConfig
-    assert type(context.get_config(mode="dict")) == dict
+    assert type(context.get_config(mode=ConfigOutputModes.TYPED)) == DataContextConfig
+    assert type(context.get_config(mode=ConfigOutputModes.DICT)) == dict
+    assert type(context.get_config(mode=ConfigOutputModes.YAML)) == str
     assert type(context.get_config(mode="yaml")) == str
     with pytest.raises(ValueError):
         context.get_config(mode="foobar")
 
-    print(context.get_config(mode="yaml"))
-    print(context.get_config("dict").keys())
+    print(context.get_config(mode=ConfigOutputModes.YAML))
+    print(context.get_config(mode=ConfigOutputModes.DICT).keys())
 
-    assert set(context.get_config("dict").keys()) == {
+    assert set(context.get_config(mode=ConfigOutputModes.DICT).keys()) == {
         "config_version",
         "datasources",
         "config_variables_file_path",
@@ -192,7 +231,6 @@ def test_get_config(empty_data_context):
         "checkpoint_store_name",
         "data_docs_sites",
         "anonymous_usage_statistics",
-        "notebooks",
     }
 
 
@@ -202,10 +240,13 @@ def test_config_variables(empty_data_context):
     assert set(context.config_variables.keys()) == {"instance_id"}
 
 
+@pytest.mark.filterwarnings(
+    "ignore:get_batch is deprecated*:DeprecationWarning:great_expectations.data_context.data_context"
+)
 def test_get_batch_of_pipeline_batch_data(empty_data_context, test_df):
     context = empty_data_context
 
-    yaml_config = f"""
+    yaml_config = """
         class_name: Datasource
 
         execution_engine:
@@ -242,6 +283,9 @@ def test_get_batch_of_pipeline_batch_data(empty_data_context, test_df):
     assert my_batch.data.dataframe.equals(test_df)
 
 
+@pytest.mark.filterwarnings(
+    "ignore:get_batch is deprecated*:DeprecationWarning:great_expectations.data_context.data_context"
+)
 def test_conveying_splitting_and_sampling_directives_from_data_context_to_pandas_execution_engine(
     empty_data_context, test_df, tmp_path_factory
 ):
@@ -342,6 +386,9 @@ data_connectors:
     assert df_data.drop("belongs_in_split", axis=1).shape == (4, 10)
 
 
+@pytest.mark.filterwarnings(
+    "ignore:get_batch is deprecated*:DeprecationWarning:great_expectations.data_context.data_context"
+)
 def test_relative_data_connector_default_and_relative_asset_base_directory_paths(
     empty_data_context, test_df, tmp_path_factory
 ):
@@ -358,7 +405,7 @@ def test_relative_data_connector_default_and_relative_asset_base_directory_paths
         file_content_fn=lambda: test_df.to_csv(header=True, index=False),
     )
 
-    yaml_config = f"""
+    yaml_config = """
 class_name: Datasource
 
 execution_engine:
@@ -419,7 +466,7 @@ def test__get_data_context_version(empty_data_context, titanic_data_context):
     assert not context._get_data_context_version("some_datasource_name", **{})
     assert not context._get_data_context_version(arg1="some_datasource_name", **{})
 
-    yaml_config = f"""
+    yaml_config = """
 class_name: Datasource
 
 execution_engine:
@@ -461,7 +508,7 @@ def test_in_memory_data_context_configuration(
     titanic_pandas_data_context_with_v013_datasource_with_checkpoints_v1_with_empty_store_stats_enabled,
 ):
     project_config_dict: dict = titanic_pandas_data_context_with_v013_datasource_with_checkpoints_v1_with_empty_store_stats_enabled.get_config(
-        mode="dict"
+        mode=ConfigOutputModes.DICT
     )
     project_config_dict["plugins_directory"] = None
     project_config_dict["validation_operators"] = {
@@ -483,6 +530,11 @@ def test_in_memory_data_context_configuration(
             ],
         }
     }
+
+    # Roundtrip through schema validation to remove any illegal fields add/or restore any missing fields.
+    project_config_dict = dataContextConfigSchema.dump(project_config_dict)
+    project_config_dict = dataContextConfigSchema.load(project_config_dict)
+
     project_config: DataContextConfig = DataContextConfig(**project_config_dict)
     data_context = BaseDataContext(
         project_config=project_config,
@@ -500,6 +552,9 @@ def test_in_memory_data_context_configuration(
     assert my_validator.expect_table_column_count_to_equal(7)["success"]
 
 
+@pytest.mark.filterwarnings(
+    "ignore:get_batch is deprecated*:DeprecationWarning:great_expectations.data_context.data_context"
+)
 def test_get_batch_with_query_in_runtime_parameters_using_runtime_data_connector(
     sa,
     data_context_with_runtime_sql_datasource_for_testing_get_batch,
@@ -590,6 +645,9 @@ def test_get_validator_with_query_in_runtime_parameters_using_runtime_data_conne
     assert len(validator.batches) == 1
 
 
+@pytest.mark.filterwarnings(
+    "ignore:get_batch is deprecated*:DeprecationWarning:great_expectations.data_context.data_context"
+)
 def test_get_batch_with_path_in_runtime_parameters_using_runtime_data_connector(
     sa,
     titanic_pandas_data_context_with_v013_datasource_with_checkpoints_v1_with_empty_store_stats_enabled,
@@ -626,7 +684,7 @@ def test_get_batch_with_path_in_runtime_parameters_using_runtime_data_connector(
     )
 
     # with no reader_method in batch_spec_passthrough
-    with pytest.raises(BatchSpecError):
+    with pytest.raises(ExecutionEngineError):
         context.get_batch(
             batch_request=RuntimeBatchRequest(
                 datasource_name="my_datasource",
@@ -698,7 +756,7 @@ def test_get_validator_with_path_in_runtime_parameters_using_runtime_data_connec
     )
 
     # with no reader_method in batch_spec_passthrough
-    with pytest.raises(BatchSpecError):
+    with pytest.raises(ExecutionEngineError):
         context.get_validator(
             batch_request=RuntimeBatchRequest(
                 datasource_name="my_datasource",

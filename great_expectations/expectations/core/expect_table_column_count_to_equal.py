@@ -1,18 +1,15 @@
-from typing import Dict, List, Optional, Union
+from typing import Dict, Optional
 
-import numpy as np
-import pandas as pd
-
-from great_expectations.core.batch import Batch
 from great_expectations.core.expectation_configuration import ExpectationConfiguration
-from great_expectations.execution_engine import ExecutionEngine, PandasExecutionEngine
+from great_expectations.execution_engine import ExecutionEngine
+from great_expectations.expectations.expectation import (
+    InvalidExpectationConfigurationError,
+    TableExpectation,
+)
 from great_expectations.expectations.util import render_evaluation_parameter_string
-
-from ...data_asset.util import parse_result_format
-from ...render.renderer.renderer import renderer
-from ...render.types import RenderedStringTemplateContent
-from ...render.util import substitute_none_for_missing
-from ..expectation import InvalidExpectationConfigurationError, TableExpectation
+from great_expectations.render.renderer.renderer import renderer
+from great_expectations.render.types import RenderedStringTemplateContent
+from great_expectations.render.util import substitute_none_for_missing
 
 
 class ExpectTableColumnCountToEqual(TableExpectation):
@@ -52,18 +49,17 @@ class ExpectTableColumnCountToEqual(TableExpectation):
 
     library_metadata = {
         "maturity": "production",
-        "package": "great_expectations",
         "tags": ["core expectation", "table expectation"],
         "contributors": [
             "@great_expectations",
         ],
         "requirements": [],
+        "has_full_test_suite": True,
+        "manually_reviewed_code": True,
     }
 
     metric_dependencies = ("table.column_count",)
-
     success_keys = ("value",)
-
     default_kwarg_values = {
         "value": None,
         "result_format": "BASIC",
@@ -71,10 +67,13 @@ class ExpectTableColumnCountToEqual(TableExpectation):
         "catch_exceptions": False,
         "meta": None,
     }
+    args_keys = ("value",)
 
     """ A Metric Decorator for the Column Count"""
 
-    def validate_configuration(self, configuration: Optional[ExpectationConfiguration]):
+    def validate_configuration(
+        self, configuration: Optional[ExpectationConfiguration]
+    ) -> None:
         """
         Validates that a configuration has been set, and sets a configuration if it has yet to be set. Ensures that
         necessary configuration arguments have been provided for the validation of the expectation.
@@ -83,7 +82,7 @@ class ExpectTableColumnCountToEqual(TableExpectation):
             configuration (OPTIONAL[ExpectationConfiguration]): \
                 An optional Expectation Configuration entry that will be used to configure the expectation
         Returns:
-            True if the configuration has been validated successfully. Otherwise, raises an exception
+            None. Raises InvalidExpectationConfigurationError if the config is not validated successfully
         """
 
         # Setting up a configuration
@@ -104,7 +103,28 @@ class ExpectTableColumnCountToEqual(TableExpectation):
 
         except AssertionError as e:
             raise InvalidExpectationConfigurationError(str(e))
-        return True
+
+    @classmethod
+    def _atomic_prescriptive_template(
+        cls,
+        configuration=None,
+        result=None,
+        language=None,
+        runtime_configuration=None,
+        **kwargs,
+    ):
+        runtime_configuration = runtime_configuration or {}
+        include_column_name = runtime_configuration.get("include_column_name", True)
+        include_column_name = (
+            include_column_name if include_column_name is not None else True
+        )
+        styling = runtime_configuration.get("styling")
+        params = substitute_none_for_missing(configuration.kwargs, ["value"])
+        template_str = "Must have exactly $value columns."
+        params_with_json_schema = {
+            "value": {"schema": {"type": "number"}, "value": params.get("value")},
+        }
+        return (template_str, params_with_json_schema, styling)
 
     @classmethod
     @renderer(renderer_type="renderer.prescriptive")
@@ -115,7 +135,7 @@ class ExpectTableColumnCountToEqual(TableExpectation):
         result=None,
         language=None,
         runtime_configuration=None,
-        **kwargs
+        **kwargs,
     ):
         runtime_configuration = runtime_configuration or {}
         include_column_name = runtime_configuration.get("include_column_name", True)

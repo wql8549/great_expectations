@@ -147,7 +147,7 @@ class ColumnKurtosis(ColumnMetricProvider):
 
 
 class ExpectColumnKurtosisToBeBetween(ColumnExpectation):
-    """Expect column Kurtosis to be between. Test values are drawn from various distributions (uniform, normal, gamma, student-t) """
+    """Expect column Kurtosis to be between. Test values are drawn from various distributions (uniform, normal, gamma, student-t)"""
 
     # These examples will be shown in the public gallery, and also executed as unit tests for your Expectation
     examples = [
@@ -286,7 +286,6 @@ class ExpectColumnKurtosisToBeBetween(ColumnExpectation):
             "@bragleg",
             "@rexboyce",
         ],
-        "package": "experimental_expectations",
     }
 
     # Setting necessary computation metric dependencies and defining kwargs, as well as assigning kwargs default values\
@@ -307,13 +306,13 @@ class ExpectColumnKurtosisToBeBetween(ColumnExpectation):
     # def validate_configuration(self, configuration: Optional[ExpectationConfiguration]):
     #     """
     #     Validates that a configuration has been set, and sets a configuration if it has yet to be set. Ensures that
-    #     neccessary configuration arguments have been provided for the validation of the expectation.
+    #     necessary configuration arguments have been provided for the validation of the expectation.
     #
     #     Args:
     #         configuration (OPTIONAL[ExpectationConfiguration]): \
     #             An optional Expectation Configuration entry that will be used to configure the expectation
     #     Returns:
-    #         True if the configuration has been validated successfully. Otherwise, raises an exception
+    #         None. Raises InvalidExpectationConfigurationError if the config is not validated successfully
     #     """
     #     super().validate_configuration(configuration)
     #     self.validate_metric_value_between_configuration(configuration=configuration)
@@ -400,5 +399,4 @@ class ExpectColumnKurtosisToBeBetween(ColumnExpectation):
 
 
 if __name__ == "__main__":
-    self_check_report = ExpectColumnKurtosisToBeBetween().run_diagnostics()
-    print(json.dumps(self_check_report, indent=2))
+    ExpectColumnKurtosisToBeBetween().print_diagnostic_checklist()

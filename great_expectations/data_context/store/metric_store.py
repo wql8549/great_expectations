@@ -1,6 +1,7 @@
 import json
 
 from great_expectations.core.metric import ValidationMetricIdentifier
+from great_expectations.core.run_identifier import RunIdentifier
 from great_expectations.core.util import ensure_json_serializable
 from great_expectations.data_context.store.database_store_backend import (
     DatabaseStoreBackend,
@@ -20,7 +21,7 @@ class MetricStore(Store):
 
     _key_class = ValidationMetricIdentifier
 
-    def __init__(self, store_backend=None, store_name=None):
+    def __init__(self, store_backend=None, store_name=None) -> None:
         if store_backend is not None:
             store_backend_module_name = store_backend.get(
                 "module_name", "great_expectations.data_context.store"
@@ -55,7 +56,7 @@ class MetricStore(Store):
         super().__init__(store_backend=store_backend, store_name=store_name)
 
     # noinspection PyMethodMayBeStatic
-    def _validate_value(self, value):
+    def _validate_value(self, value) -> None:
         # Values must be json serializable since they must be inputs to expectation configurations
         ensure_json_serializable(value)
 
@@ -68,7 +69,7 @@ class MetricStore(Store):
 
 
 class EvaluationParameterStore(MetricStore):
-    def __init__(self, store_backend=None, store_name=None):
+    def __init__(self, store_backend=None, store_name=None) -> None:
         if store_backend is not None:
             store_backend_module_name = store_backend.get(
                 "module_name", "great_expectations.data_context.store"
@@ -97,9 +98,9 @@ class EvaluationParameterStore(MetricStore):
             "module_name": self.__class__.__module__,
             "class_name": self.__class__.__name__,
         }
-        filter_properties_dict(properties=self._config, inplace=True)
+        filter_properties_dict(properties=self._config, clean_falsy=True, inplace=True)
 
-    def get_bind_params(self, run_id):
+    def get_bind_params(self, run_id: RunIdentifier) -> dict:
         params = {}
         for k in self._store_backend.list_keys(run_id.to_tuple()):
             key = self.tuple_to_key(k)

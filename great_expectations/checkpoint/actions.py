@@ -6,6 +6,11 @@ The only requirement from an action is for it to have a take_action method.
 
 import logging
 import warnings
+from typing import Dict, Optional, Union
+from urllib.parse import urljoin
+
+from great_expectations.core import ExpectationSuiteValidationResult
+from great_expectations.data_context.types.refs import GeCloudResourceRef
 
 import requests
 
@@ -14,15 +19,18 @@ try:
 except ImportError:
     pypd = None
 
-
 from great_expectations.checkpoint.util import (
+    send_cloud_notification,
     send_email,
     send_microsoft_teams_notifications,
     send_opsgenie_alert,
     send_slack_notification,
+    send_sns_notification,
 )
 from great_expectations.data_context.store.metric_store import MetricStore
 from great_expectations.data_context.types.resource_identifiers import (
+    ExpectationSuiteIdentifier,
+    GeCloudIdentifier,
     ValidationResultIdentifier,
 )
 from great_expectations.data_context.util import instantiate_class_from_config
@@ -39,14 +47,18 @@ class ValidationAction:
     The Data Context is passed to this class in its constructor.
     """
 
-    def __init__(self, data_context):
+    def __init__(self, data_context) -> None:
         self.data_context = data_context
 
     def run(
         self,
-        validation_result_suite,
-        validation_result_suite_identifier,
+        validation_result_suite: ExpectationSuiteValidationResult,
+        validation_result_suite_identifier: Union[
+            ValidationResultIdentifier, GeCloudIdentifier
+        ],
         data_asset,
+        expectation_suite_identifier: ExpectationSuiteIdentifier = None,
+        checkpoint_identifier=None,
         **kwargs,
     ):
         """
@@ -54,18 +66,29 @@ class ValidationAction:
         :param validation_result_suite:
         :param validation_result_suite_identifier:
         :param data_asset:
+        :param expectation_suite_identifier:  The ExpectationSuiteIdentifier to use
+        :param checkpoint_identifier:  The Checkpoint to use
         :param: kwargs - any additional arguments the child might use
         :return:
         """
         return self._run(
-            validation_result_suite,
-            validation_result_suite_identifier,
-            data_asset,
+            validation_result_suite=validation_result_suite,
+            validation_result_suite_identifier=validation_result_suite_identifier,
+            data_asset=data_asset,
+            expectation_suite_identifier=expectation_suite_identifier,
+            checkpoint_identifier=checkpoint_identifier,
             **kwargs,
         )
 
     def _run(
-        self, validation_result_suite, validation_result_suite_identifier, data_asset
+        self,
+        validation_result_suite: ExpectationSuiteValidationResult,
+        validation_result_suite_identifier: Union[
+            ValidationResultIdentifier, GeCloudIdentifier
+        ],
+        data_asset,
+        expectation_suite_identifier=None,
+        checkpoint_identifier=None,
     ):
         return NotImplementedError
 
@@ -74,12 +97,19 @@ class NoOpAction(ValidationAction):
     def __init__(
         self,
         data_context,
-    ):
+    ) -> None:
         super().__init__(data_context)
 
     def _run(
-        self, validation_result_suite, validation_result_suite_identifier, data_asset
-    ):
+        self,
+        validation_result_suite: ExpectationSuiteValidationResult,
+        validation_result_suite_identifier: Union[
+            ValidationResultIdentifier, GeCloudIdentifier
+        ],
+        data_asset,
+        expectation_suite_identifier=None,
+        checkpoint_identifier=None,
+    ) -> None:
         print("Happily doing nothing")
 
 
@@ -141,10 +171,14 @@ class SlackNotificationAction(ValidationAction):
 
         - name: send_slack_notification_on_validation_result
         action:
-          class_name: StoreValidationResultAction
+          class_name: SlackNotificationAction
           # put the actual webhook URL in the uncommitted/config_variables.yml file
           # or pass in as environment variable
+          # use slack_webhook when not using slack bot token
           slack_webhook: ${validation_notification_slack_webhook}
+          # pass slack token and slack channel when not using slack_webhook
+          slack_token: # token from slack app
+          slack_channel: # slack channel that messages should go to
           notify_on: all # possible values: "all", "failure", "success"
           notify_with: # optional list of DataDocs site names to display in Slack message. Defaults to showing all
           renderer:
@@ -160,10 +194,12 @@ class SlackNotificationAction(ValidationAction):
         self,
         data_context,
         renderer,
-        slack_webhook,
+        slack_webhook=None,
+        slack_token=None,
+        slack_channel=None,
         notify_on="all",
         notify_with=None,
-    ):
+    ) -> None:
         """Construct a SlackNotificationAction
 
         Args:
@@ -190,30 +226,44 @@ class SlackNotificationAction(ValidationAction):
                 package_name=None,
                 class_name=renderer["class_name"],
             )
+        if not slack_token and slack_channel:
+            assert slack_webhook
+        if not slack_webhook:
+            assert slack_token and slack_channel
+        assert not (slack_webhook and slack_channel and slack_token)
+
         self.slack_webhook = slack_webhook
-        assert slack_webhook, "No Slack webhook found in action config."
+        self.slack_token = slack_token
+        self.slack_channel = slack_channel
         self.notify_on = notify_on
         self.notify_with = notify_with
 
     def _run(
         self,
-        validation_result_suite,
-        validation_result_suite_identifier,
+        validation_result_suite: ExpectationSuiteValidationResult,
+        validation_result_suite_identifier: Union[
+            ValidationResultIdentifier, GeCloudIdentifier
+        ],
         data_asset=None,
         payload=None,
+        expectation_suite_identifier=None,
+        checkpoint_identifier=None,
     ):
         logger.debug("SlackNotificationAction.run")
 
         if validation_result_suite is None:
+            logger.warning(
+                f"No validation_result_suite was passed to {type(self).__name__} action. Skipping action."
+            )
             return
 
         if not isinstance(
-            validation_result_suite_identifier, ValidationResultIdentifier
+            validation_result_suite_identifier,
+            (ValidationResultIdentifier, GeCloudIdentifier),
         ):
             raise TypeError(
-                "validation_result_suite_id must be of type ValidationResultIdentifier, not {}".format(
-                    type(validation_result_suite_identifier)
-                )
+                "validation_result_suite_id must be of type ValidationResultIdentifier or GeCloudIdentifier, "
+                "not {}".format(type(validation_result_suite_identifier))
             )
 
         validation_success = validation_result_suite.success
@@ -232,18 +282,21 @@ class SlackNotificationAction(ValidationAction):
             or self.notify_on == "failure"
             and not validation_success
         ):
-            query = self.renderer.render(
+            query: Dict = self.renderer.render(
                 validation_result_suite, data_docs_pages, self.notify_with
             )
-            # this will actually sent the POST request to the Slack webapp server
-            slack_notif_result = send_slack_notification(
-                query, slack_webhook=self.slack_webhook
-            )
 
-            # sending payload back as dictionary
+            # this will actually send the POST request to the Slack webapp server
+            slack_notif_result = send_slack_notification(
+                query,
+                slack_webhook=self.slack_webhook,
+                slack_token=self.slack_token,
+                slack_channel=self.slack_channel,
+            )
             return {"slack_notification_result": slack_notif_result}
+
         else:
-            return {"slack_notification_result": ""}
+            return {"slack_notification_result": "none required"}
 
 
 class PagerdutyAlertAction(ValidationAction):
@@ -269,7 +322,7 @@ class PagerdutyAlertAction(ValidationAction):
         api_key,
         routing_key,
         notify_on="failure",
-    ):
+    ) -> None:
         """Construct a PagerdutyAlertAction
 
         Args:
@@ -289,23 +342,30 @@ class PagerdutyAlertAction(ValidationAction):
 
     def _run(
         self,
-        validation_result_suite,
-        validation_result_suite_identifier,
+        validation_result_suite: ExpectationSuiteValidationResult,
+        validation_result_suite_identifier: Union[
+            ValidationResultIdentifier, GeCloudIdentifier
+        ],
         data_asset=None,
         payload=None,
+        expectation_suite_identifier=None,
+        checkpoint_identifier=None,
     ):
         logger.debug("PagerdutyAlertAction.run")
 
         if validation_result_suite is None:
+            logger.warning(
+                f"No validation_result_suite was passed to {type(self).__name__} action. Skipping action."
+            )
             return
 
         if not isinstance(
-            validation_result_suite_identifier, ValidationResultIdentifier
+            validation_result_suite_identifier,
+            (ValidationResultIdentifier, GeCloudIdentifier),
         ):
             raise TypeError(
-                "validation_result_suite_id must be of type ValidationResultIdentifier, not {}".format(
-                    type(validation_result_suite_identifier)
-                )
+                "validation_result_suite_id must be of type ValidationResultIdentifier or GeCloudIdentifier, "
+                "not {}".format(type(validation_result_suite_identifier))
             )
 
         validation_success = validation_result_suite.success
@@ -368,7 +428,7 @@ class MicrosoftTeamsNotificationAction(ValidationAction):
         renderer,
         microsoft_teams_webhook,
         notify_on="all",
-    ):
+    ) -> None:
         """Construct a MicrosoftTeamsNotificationAction
 
         Args:
@@ -403,23 +463,30 @@ class MicrosoftTeamsNotificationAction(ValidationAction):
 
     def _run(
         self,
-        validation_result_suite,
-        validation_result_suite_identifier,
+        validation_result_suite: ExpectationSuiteValidationResult,
+        validation_result_suite_identifier: Union[
+            ValidationResultIdentifier, GeCloudIdentifier
+        ],
         data_asset=None,
         payload=None,
+        expectation_suite_identifier=None,
+        checkpoint_identifier=None,
     ):
         logger.debug("MicrosoftTeamsNotificationAction.run")
 
         if validation_result_suite is None:
+            logger.warning(
+                f"No validation_result_suite was passed to {type(self).__name__} action. Skipping action."
+            )
             return
 
         if not isinstance(
-            validation_result_suite_identifier, ValidationResultIdentifier
+            validation_result_suite_identifier,
+            (ValidationResultIdentifier, GeCloudIdentifier),
         ):
             raise TypeError(
-                "validation_result_suite_id must be of type ValidationResultIdentifier, not {}".format(
-                    type(validation_result_suite_identifier)
-                )
+                "validation_result_suite_id must be of type ValidationResultIdentifier or GeCloudIdentifier, "
+                "not {}".format(type(validation_result_suite_identifier))
             )
         validation_success = validation_result_suite.success
         data_docs_pages = None
@@ -479,7 +546,7 @@ class OpsgenieAlertAction(ValidationAction):
         region=None,
         priority="P3",
         notify_on="failure",
-    ):
+    ) -> None:
         """Construct a OpsgenieAlertAction
 
         Args:
@@ -511,23 +578,30 @@ class OpsgenieAlertAction(ValidationAction):
 
     def _run(
         self,
-        validation_result_suite,
-        validation_result_suite_identifier,
+        validation_result_suite: ExpectationSuiteValidationResult,
+        validation_result_suite_identifier: Union[
+            ValidationResultIdentifier, GeCloudIdentifier
+        ],
         data_asset=None,
         payload=None,
+        expectation_suite_identifier=None,
+        checkpoint_identifier=None,
     ):
         logger.debug("OpsgenieAlertAction.run")
 
         if validation_result_suite is None:
+            logger.warning(
+                f"No validation_result_suite was passed to {type(self).__name__} action. Skipping action."
+            )
             return
 
         if not isinstance(
-            validation_result_suite_identifier, ValidationResultIdentifier
+            validation_result_suite_identifier,
+            (ValidationResultIdentifier, GeCloudIdentifier),
         ):
             raise TypeError(
-                "validation_result_suite_id must be of type ValidationResultIdentifier, not {}".format(
-                    type(validation_result_suite_identifier)
-                )
+                "validation_result_suite_id must be of type ValidationResultIdentifier or GeCloudIdentifier, "
+                "not {}".format(type(validation_result_suite_identifier))
             )
 
         validation_success = validation_result_suite.success
@@ -576,7 +650,7 @@ class EmailAction(ValidationAction):
             # implement a custom one
             module_name: great_expectations.render.renderer.email_renderer
             class_name: EmailRenderer
-          # put the actual following informations in the uncommitted/config_variables.yml file
+          # put the actual following information in the uncommitted/config_variables.yml file
           # or pass in as environment variable
           smtp_address: ${smtp_address}
           smtp_port: ${smtp_port}
@@ -602,7 +676,7 @@ class EmailAction(ValidationAction):
         use_ssl=None,
         notify_on="all",
         notify_with=None,
-    ):
+    ) -> None:
         """Construct an EmailAction
         Args:
             data_context:
@@ -611,14 +685,14 @@ class EmailAction(ValidationAction):
                    "module_name": "great_expectations.render.renderer.email_renderer",
                    "class_name": "EmailRenderer",
                }
-            smtp_address: adress of the SMTP server used to send the email
+            smtp_address: address of the SMTP server used to send the email
             smtp_address: port of the SMTP server used to send the email
             sender_login: login used send the email
             sender_password: password used to send the email
             sender_alias: optional alias used to send the email (default = sender_login)
             receiver_emails: email addresses that will be receive the email (separated by commas)
-            use_tls: optional use of TLS to send the email (using either TLS or SSL is highly recommanded)
-            use_ssl: optional use of SSL to send the email (using either TLS or SSL is highly recommanded)
+            use_tls: optional use of TLS to send the email (using either TLS or SSL is highly recommended)
+            use_ssl: optional use of SSL to send the email (using either TLS or SSL is highly recommended)
             notify_on: "all", "failure", "success" - specifies validation status that will trigger notification
             notify_with: optional list of DataDocs site names to display in the email message
         """
@@ -662,23 +736,30 @@ class EmailAction(ValidationAction):
 
     def _run(
         self,
-        validation_result_suite,
-        validation_result_suite_identifier,
+        validation_result_suite: ExpectationSuiteValidationResult,
+        validation_result_suite_identifier: Union[
+            ValidationResultIdentifier, GeCloudIdentifier
+        ],
         data_asset=None,
         payload=None,
+        expectation_suite_identifier=None,
+        checkpoint_identifier=None,
     ):
         logger.debug("EmailAction.run")
 
         if validation_result_suite is None:
+            logger.warning(
+                f"No validation_result_suite was passed to {type(self).__name__} action. Skipping action."
+            )
             return
 
         if not isinstance(
-            validation_result_suite_identifier, ValidationResultIdentifier
+            validation_result_suite_identifier,
+            (ValidationResultIdentifier, GeCloudIdentifier),
         ):
             raise TypeError(
-                "validation_result_suite_id must be of type ValidationResultIdentifier, not {}".format(
-                    type(validation_result_suite_identifier)
-                )
+                "validation_result_suite_id must be of type ValidationResultIdentifier or GeCloudIdentifier, "
+                "not {}".format(type(validation_result_suite_identifier))
             )
 
         validation_success = validation_result_suite.success
@@ -739,7 +820,7 @@ class StoreValidationResultAction(ValidationAction):
         self,
         data_context,
         target_store_name=None,
-    ):
+    ) -> None:
         """
 
         :param data_context: Data Context
@@ -755,28 +836,53 @@ class StoreValidationResultAction(ValidationAction):
 
     def _run(
         self,
-        validation_result_suite,
-        validation_result_suite_identifier,
+        validation_result_suite: ExpectationSuiteValidationResult,
+        validation_result_suite_identifier: Union[
+            ValidationResultIdentifier, GeCloudIdentifier
+        ],
         data_asset,
         payload=None,
+        expectation_suite_identifier=None,
+        checkpoint_identifier=None,
     ):
         logger.debug("StoreValidationResultAction.run")
 
         if validation_result_suite is None:
+            logger.warning(
+                f"No validation_result_suite was passed to {type(self).__name__} action. Skipping action."
+            )
             return
 
         if not isinstance(
-            validation_result_suite_identifier, ValidationResultIdentifier
+            validation_result_suite_identifier,
+            (ValidationResultIdentifier, GeCloudIdentifier),
         ):
             raise TypeError(
-                "validation_result_id must be of type ValidationResultIdentifier, not {}".format(
+                "validation_result_id must be of type ValidationResultIdentifier or GeCloudIdentifier, not {}".format(
                     type(validation_result_suite_identifier)
                 )
             )
 
-        self.target_store.set(
-            validation_result_suite_identifier, validation_result_suite
+        contract_ge_cloud_id = None
+        if self.data_context.ge_cloud_mode and checkpoint_identifier:
+            contract_ge_cloud_id = checkpoint_identifier.ge_cloud_id
+
+        expectation_suite_ge_cloud_id = None
+        if self.data_context.ge_cloud_mode and expectation_suite_identifier:
+            expectation_suite_ge_cloud_id = str(
+                expectation_suite_identifier.ge_cloud_id
+            )
+
+        return_val = self.target_store.set(
+            validation_result_suite_identifier,
+            validation_result_suite,
+            contract_id=contract_ge_cloud_id,
+            expectation_suite_id=expectation_suite_ge_cloud_id,
         )
+        if self.data_context.ge_cloud_mode:
+            return_val: GeCloudResourceRef
+            new_ge_cloud_id = return_val.ge_cloud_id
+            validation_result_suite_identifier.ge_cloud_id = new_ge_cloud_id
 
 
 class StoreEvaluationParametersAction(ValidationAction):
@@ -800,7 +906,7 @@ class StoreEvaluationParametersAction(ValidationAction):
 
     """
 
-    def __init__(self, data_context, target_store_name=None):
+    def __init__(self, data_context, target_store_name=None) -> None:
         """
 
         Args:
@@ -817,21 +923,29 @@ class StoreEvaluationParametersAction(ValidationAction):
 
     def _run(
         self,
-        validation_result_suite,
-        validation_result_suite_identifier,
+        validation_result_suite: ExpectationSuiteValidationResult,
+        validation_result_suite_identifier: Union[
+            ValidationResultIdentifier, GeCloudIdentifier
+        ],
         data_asset,
         payload=None,
+        expectation_suite_identifier=None,
+        checkpoint_identifier=None,
     ):
         logger.debug("StoreEvaluationParametersAction.run")
 
         if validation_result_suite is None:
+            logger.warning(
+                f"No validation_result_suite was passed to {type(self).__name__} action. Skipping action."
+            )
             return
 
         if not isinstance(
-            validation_result_suite_identifier, ValidationResultIdentifier
+            validation_result_suite_identifier,
+            (ValidationResultIdentifier, GeCloudIdentifier),
         ):
             raise TypeError(
-                "validation_result_id must be of type ValidationResultIdentifier, not {}".format(
+                "validation_result_id must be of type ValidationResultIdentifier or GeCloudIdentifier, not {}".format(
                     type(validation_result_suite_identifier)
                 )
             )
@@ -859,7 +973,7 @@ class StoreMetricsAction(ValidationAction):
 
     def __init__(
         self, data_context, requested_metrics, target_store_name="metrics_store"
-    ):
+    ) -> None:
         """
 
         Args:
@@ -892,21 +1006,29 @@ class StoreMetricsAction(ValidationAction):
 
     def _run(
         self,
-        validation_result_suite,
-        validation_result_suite_identifier,
+        validation_result_suite: ExpectationSuiteValidationResult,
+        validation_result_suite_identifier: Union[
+            ValidationResultIdentifier, GeCloudIdentifier
+        ],
         data_asset,
         payload=None,
+        expectation_suite_identifier=None,
+        checkpoint_identifier=None,
     ):
         logger.debug("StoreMetricsAction.run")
 
         if validation_result_suite is None:
+            logger.warning(
+                f"No validation_result_suite was passed to {type(self).__name__} action. Skipping action."
+            )
             return
 
         if not isinstance(
-            validation_result_suite_identifier, ValidationResultIdentifier
+            validation_result_suite_identifier,
+            (ValidationResultIdentifier, GeCloudIdentifier),
         ):
             raise TypeError(
-                "validation_result_id must be of type ValidationResultIdentifier, not {}".format(
+                "validation_result_id must be of type ValidationResultIdentifier or GeCloudIdentifier, not {}".format(
                     type(validation_result_suite_identifier)
                 )
             )
@@ -941,15 +1063,16 @@ class UpdateDataDocsAction(ValidationAction):
 
     """
 
-    def __init__(self, data_context, site_names=None, target_site_names=None):
+    def __init__(self, data_context, site_names=None, target_site_names=None) -> None:
         """
         :param data_context: Data Context
         :param site_names: *optional* List of site names for building data docs
         """
         super().__init__(data_context)
         if target_site_names:
+            # deprecated-v0.10.10
             warnings.warn(
-                "target_site_names is deprecated. Please use site_names instead.",
+                "target_site_names is deprecated as of v0.10.10 and will be removed in v0.16. Please use site_names instead.",
                 DeprecationWarning,
             )
             if site_names:
@@ -962,33 +1085,46 @@ class UpdateDataDocsAction(ValidationAction):
 
     def _run(
         self,
-        validation_result_suite,
-        validation_result_suite_identifier,
+        validation_result_suite: ExpectationSuiteValidationResult,
+        validation_result_suite_identifier: Union[
+            ValidationResultIdentifier, GeCloudIdentifier
+        ],
         data_asset,
         payload=None,
+        expectation_suite_identifier=None,
+        checkpoint_identifier=None,
     ):
         logger.debug("UpdateDataDocsAction.run")
 
         if validation_result_suite is None:
+            logger.warning(
+                f"No validation_result_suite was passed to {type(self).__name__} action. Skipping action."
+            )
             return
 
         if not isinstance(
-            validation_result_suite_identifier, ValidationResultIdentifier
+            validation_result_suite_identifier,
+            (ValidationResultIdentifier, GeCloudIdentifier),
         ):
             raise TypeError(
-                "validation_result_id must be of type ValidationResultIdentifier, not {}".format(
+                "validation_result_id must be of type ValidationResultIdentifier or GeCloudIdentifier, not {}".format(
                     type(validation_result_suite_identifier)
                 )
             )
 
+        # TODO Update for RenderedDataDocs
         # build_data_docs will return the index page for the validation results, but we want to return the url for the valiation result using the code below
         self.data_context.build_data_docs(
             site_names=self._site_names,
             resource_identifiers=[
                 validation_result_suite_identifier,
-                validation_result_suite_identifier.expectation_suite_identifier,
+                expectation_suite_identifier,
             ],
         )
+
+        data_docs_validation_results = {}
+        if self.data_context.ge_cloud_mode:
+            return data_docs_validation_results
 
         # get the URL for the validation result
         docs_site_urls_list = self.data_context.get_docs_sites_urls(
@@ -996,8 +1132,108 @@ class UpdateDataDocsAction(ValidationAction):
             site_names=self._site_names,
         )
         # process payload
-        data_docs_validation_results = {}
         for sites in docs_site_urls_list:
             data_docs_validation_results[sites["site_name"]] = sites["site_url"]
 
         return data_docs_validation_results
+
+
+class CloudNotificationAction(ValidationAction):
+    """
+    CloudNotificationAction is an action which utilizes the Cloud store backend
+    to deliver user-specified Notification Actions.
+    """
+
+    def __init__(
+        self,
+        data_context: "DataContext",
+        checkpoint_ge_cloud_id: str,
+    ) -> None:
+        super().__init__(data_context)
+        self.checkpoint_ge_cloud_id = checkpoint_ge_cloud_id
+
+    def _run(
+        self,
+        validation_result_suite: ExpectationSuiteValidationResult,
+        validation_result_suite_identifier: GeCloudIdentifier,
+        data_asset=None,
+        payload: Optional[Dict] = None,
+        expectation_suite_identifier=None,
+        checkpoint_identifier=None,
+    ):
+        logger.debug("CloudNotificationAction.run")
+
+        if validation_result_suite is None:
+            logger.warning(
+                f"No validation_result_suite was passed to {type(self).__name__} action. Skipping action. "
+            )
+
+        if not self.data_context.ge_cloud_mode:
+            return Exception(
+                "CloudNotificationActions can only be used in GE Cloud Mode."
+            )
+        if not isinstance(validation_result_suite_identifier, GeCloudIdentifier):
+            raise TypeError(
+                "validation_result_id must be of type GeCloudIdentifier, not {}".format(
+                    type(validation_result_suite_identifier)
+                )
+            )
+
+        ge_cloud_url = urljoin(
+            self.data_context.ge_cloud_config.base_url,
+            f"/organizations/{self.data_context.ge_cloud_config.organization_id}/contracts/"
+            f"{self.checkpoint_ge_cloud_id}/suite-validation-results/{validation_result_suite_identifier.ge_cloud_id}/notification-actions",
+        )
+        auth_headers = {
+            "Content-Type": "application/vnd.api+json",
+            "Authorization": f"Bearer {self.data_context.ge_cloud_config.access_token}",
+        }
+        return send_cloud_notification(url=ge_cloud_url, headers=auth_headers)
+
+
+class SNSNotificationAction(ValidationAction):
+    """
+    Action that pushes validations results to an SNS topic with a subject of passed or failed.
+    """
+
+    def __init__(
+        self, data_context: "DataContext", sns_topic_arn: str, sns_message_subject
+    ) -> None:
+        super().__init__(data_context)
+        self.sns_topic_arn = sns_topic_arn
+        self.sns_message_subject = sns_message_subject
+
+    def _run(
+        self,
+        validation_result_suite: ExpectationSuiteValidationResult,
+        validation_result_suite_identifier: ValidationResultIdentifier,
+        expectation_suite_identifier=None,
+        checkpoint_identifier=None,
+        data_asset=None,
+        **kwargs,
+    ) -> str:
+        logger.debug("SNSNotificationAction.run")
+
+        if validation_result_suite is None:
+            logger.warning(
+                f"No validation_result_suite was passed to {type(self).__name__} action. Skipping action. "
+            )
+
+        if self.sns_message_subject is None:
+            logger.warning(
+                f"No message subject was passed checking for expectation_suite_name"
+            )
+            if expectation_suite_identifier is None:
+                subject = validation_result_suite_identifier.run_id
+                logger.warning(
+                    f"No expectation_suite_identifier was passed. Defaulting to validation run_id: {subject}."
+                )
+            else:
+                subject = expectation_suite_identifier.expectation_suite_name
+                logger.info(f"Using expectation_suite_name: {subject}")
+        else:
+            subject = self.sns_message_subject
+
+        return send_sns_notification(
+            self.sns_topic_arn, subject, validation_result_suite.__str__(), **kwargs
+        )

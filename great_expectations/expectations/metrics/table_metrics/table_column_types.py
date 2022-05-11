@@ -1,4 +1,4 @@
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 
 from great_expectations.exceptions import GreatExpectationsError
 from great_expectations.execution_engine import (
@@ -12,8 +12,15 @@ from great_expectations.execution_engine.sqlalchemy_batch_data import (
 )
 from great_expectations.expectations.metrics.import_manager import sparktypes
 from great_expectations.expectations.metrics.metric_provider import metric_value
-from great_expectations.expectations.metrics.table_metric import TableMetricProvider
+from great_expectations.expectations.metrics.table_metric_provider import (
+    TableMetricProvider,
+)
 from great_expectations.expectations.metrics.util import get_sqlalchemy_column_metadata
+
+try:
+    from sqlalchemy.sql.elements import TextClause
+except ImportError:
+    TextClause = None
 
 
 class ColumnTypes(TableMetricProvider):
@@ -27,7 +34,7 @@ class ColumnTypes(TableMetricProvider):
         execution_engine: PandasExecutionEngine,
         metric_domain_kwargs: Dict,
         metric_value_kwargs: Dict,
-        metrics: Dict[Tuple, Any],
+        metrics: Dict[str, Any],
         runtime_configuration: Dict,
     ):
         df, _, _ = execution_engine.get_compute_domain(
@@ -44,7 +51,7 @@ class ColumnTypes(TableMetricProvider):
         execution_engine: SqlAlchemyExecutionEngine,
         metric_domain_kwargs: Dict,
         metric_value_kwargs: Dict,
-        metrics: Dict[Tuple, Any],
+        metrics: Dict[str, Any],
         runtime_configuration: Dict,
     ):
         batch_id = metric_domain_kwargs.get("batch_id")
@@ -69,7 +76,7 @@ class ColumnTypes(TableMetricProvider):
         execution_engine: SparkDFExecutionEngine,
         metric_domain_kwargs: Dict,
         metric_value_kwargs: Dict,
-        metrics: Dict[Tuple, Any],
+        metrics: Dict[str, Any],
         runtime_configuration: Dict,
     ):
         df, _, _ = execution_engine.get_compute_domain(
@@ -81,8 +88,15 @@ class ColumnTypes(TableMetricProvider):
 
 
 def _get_sqlalchemy_column_metadata(engine, batch_data: SqlAlchemyBatchData):
-    table_selectable = batch_data.source_table_name or batch_data.selectable.name
-    schema_name = batch_data.source_schema_name or batch_data.selectable.schema
+    # if a custom query was passed
+    if isinstance(batch_data.selectable, TextClause):
+        table_selectable: TextClause = batch_data.selectable
+        schema_name = None
+    else:
+        table_selectable: str = (
+            batch_data.source_table_name or batch_data.selectable.name
+        )
+        schema_name = batch_data.source_schema_name or batch_data.selectable.schema
     return get_sqlalchemy_column_metadata(
         engine=engine,
         table_selectable=table_selectable,
@@ -93,14 +107,14 @@ def _get_sqlalchemy_column_metadata(engine, batch_data: SqlAlchemyBatchData):
 def _get_spark_column_metadata(field, parent_name="", include_nested=True):
     cols = []
     if parent_name != "":
-        parent_name = parent_name + "."
+        parent_name = f"{parent_name}."
 
     if isinstance(field, sparktypes.StructType):
         for child in field.fields:
             cols += _get_spark_column_metadata(child, parent_name=parent_name)
     elif isinstance(field, sparktypes.StructField):
         if "." in field.name:
-            name = parent_name + "`" + field.name + "`"
+            name = f"{parent_name}`{field.name}`"
         else:
             name = parent_name + field.name
         field_metadata = {"name": name, "type": field.dataType}

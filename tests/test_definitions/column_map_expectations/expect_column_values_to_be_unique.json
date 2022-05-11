@@ -41,11 +41,32 @@
         "unique": "INTEGER",
         "null": "CHAR",
         "mult_dup": "CHAR"
+      },
+      "bigquery": {
+        "a": "STRING",
+        "b": "STRING",
+        "c": "NUMERIC",
+        "d": "STRING",
+        "n": "NUMERIC",
+        "unique": "NUMERIC",
+        "null": "STRING",
+        "mult_dup": "STRING"
+      },
+      "trino": {
+        "a": "VARCHAR",
+        "b": "VARCHAR",
+        "c": "INTEGER",
+        "d": "VARCHAR",
+        "n": "INTEGER",
+        "unique": "INTEGER",
+        "null": "VARCHAR",
+        "mult_dup": "VARCHAR"
       }
     },
     "tests" : [
       {
         "title": "basic_positive_test_case",
+        "include_in_gallery": true,
         "exact_match_out": false,
         "in": {
           "column": "unique"
@@ -57,6 +78,7 @@
         }
       },{
         "title": "basic_negative_case_all_non_unique_character_values",
+        "include_in_gallery": true,
         "exact_match_out": false,
         "in": {
           "column": "a"
@@ -128,6 +150,7 @@
       },{
         "title": "positive_case_all_null_values",
         "exact_match_out": false,
+        "suppress_test_for": ["trino"],
         "in": {
           "column": "null"
         },
@@ -146,6 +169,41 @@
           "success": false,
           "unexpected_list": ["1", "1", "2", "2"],
           "unexpected_index_list": [0, 1, 2, 3]
+        }
+      }
+    ]
+  },
+   {
+    "data" : {
+      "0": [1, 2, 3, 4],
+      "_c0": [1, 2, 3, 4]
+    },
+    "schemas": {
+      "spark": {
+        "0": "IntegerType",
+        "_c0": "IntegerType"
+      }
+    },
+    "only_for": ["spark"],
+    "tests" : [
+      {
+        "title": "positive_integer_column_name",
+        "exact_match_out": false,
+        "in": {
+          "column": "0"
+        },
+        "out": {
+          "success": true
+        }
+      },
+      {
+        "title": "positive_spark_headerless_column_name",
+        "exact_match_out": false,
+        "in": {
+          "column": "_c0"
+      },
+        "out": {
+          "success": true
         }
       }
     ]

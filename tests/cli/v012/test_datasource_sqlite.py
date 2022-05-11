@@ -7,7 +7,6 @@ from great_expectations import DataContext
 from great_expectations.cli.v012 import cli
 from tests.cli.v012.test_cli import yaml
 from tests.cli.v012.utils import (
-    assert_dict_key_and_val_in_stdout,
     assert_no_logging_messages_or_tracebacks,
     assert_no_tracebacks,
 )
@@ -165,7 +164,7 @@ def test_cli_datasource_new_connection_string(
     result = runner.invoke(
         cli,
         ["datasource", "new", "-d", project_root_dir],
-        input="2\n6\nmynewsource\n{}\n\n".format(str(empty_sqlite_db.url)),
+        input=f"2\n6\nmynewsource\n{str(empty_sqlite_db.url)}\n\n",
         catch_exceptions=False,
     )
     stdout = result.stdout
@@ -284,7 +283,7 @@ def test_cli_datasource_profile_with_datasource_arg(
     stdout = result.stdout
 
     assert result.exit_code == 0
-    assert "Profiling '{}'".format(datasource_name) in stdout
+    assert f"Profiling '{datasource_name}'" in stdout
 
     context = DataContext(project_root_dir)
     assert len(context.list_datasources()) == 1
@@ -355,7 +354,7 @@ def test_cli_datasource_profile_with_datasource_arg_and_generator_name_arg(
     stdout = result.stdout
 
     assert result.exit_code == 0
-    assert "Profiling '{}'".format(datasource_name) in stdout
+    assert f"Profiling '{datasource_name}'" in stdout
 
     context = DataContext(project_root_dir)
     assert len(context.list_datasources()) == 1
@@ -460,7 +459,7 @@ def test_cli_datasource_profile_with_data_asset_and_additional_batch_kwargs_with
     )
     stdout = result.stdout
     assert result.exit_code == 0
-    assert "Profiling '{}'".format(datasource_name) in stdout
+    assert f"Profiling '{datasource_name}'" in stdout
     assert "The following Data Docs sites will be built:\n" in stdout
     assert "local_site:" in stdout
 
@@ -528,7 +527,7 @@ def test_cli_datasource_profile_with_valid_data_asset_arg(
 
     stdout = result.stdout
     assert result.exit_code == 0
-    assert "Profiling '{}'".format(datasource_name) in stdout
+    assert f"Profiling '{datasource_name}'" in stdout
     assert "The following Data Docs sites will be built:\n" in stdout
     assert "local_site:" in stdout
 

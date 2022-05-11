@@ -18,16 +18,17 @@ def test_store_list_stores(
     monkeypatch.chdir(os.path.dirname(project_dir))
     result = runner.invoke(
         cli,
-        f"--v3-api store list",
+        "--v3-api store list",
         catch_exceptions=False,
     )
     assert result.exit_code == 0
     for expected_output in [
-        "4 active Stores found",
+        "5 active Stores found",
         "expectations_store",
         "validations_store",
         "evaluation_parameter_store",
         "checkpoint_store",
+        "profiler_store",
     ]:
         assert expected_output in result.output
 

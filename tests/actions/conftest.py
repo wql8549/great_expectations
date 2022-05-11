@@ -1,4 +1,9 @@
+import os
+from uuid import UUID
+
+import boto3
 import pytest
+from moto import mock_sns
 
 from great_expectations.core import ExpectationSuiteValidationResult, RunIdentifier
 from great_expectations.data_context import BaseDataContext
@@ -6,6 +11,7 @@ from great_expectations.data_context.types.base import DataContextConfig
 from great_expectations.data_context.types.resource_identifiers import (
     BatchIdentifier,
     ExpectationSuiteIdentifier,
+    GeCloudIdentifier,
     ValidationResultIdentifier,
 )
 
@@ -77,6 +83,16 @@ def basic_in_memory_data_context_for_validation_operator(
 
 
 @pytest.fixture(scope="module")
+def checkpoint_ge_cloud_id():
+    return "bfe7dc64-5320-49b0-91c1-2e8029e06c4d"
+
+
+@pytest.fixture(scope="module")
+def validation_result_suite_ge_cloud_id():
+    return "bfe7dc64-5320-49b0-91c1-2e8029e06c4d"
+
+
+@pytest.fixture(scope="module")
 def validation_result_suite():
     return ExpectationSuiteValidationResult(
         results=[],
@@ -96,10 +112,37 @@ def validation_result_suite():
 
 
 @pytest.fixture(scope="module")
+def validation_result_suite_ge_cloud_identifier(validation_result_suite_ge_cloud_id):
+    return GeCloudIdentifier(
+        resource_type="contract", ge_cloud_id=validation_result_suite_ge_cloud_id
+    )
+
+
+@pytest.fixture(scope="module")
+def validation_result_suite_with_ge_cloud_id(validation_result_suite_ge_cloud_id):
+    return ExpectationSuiteValidationResult(
+        results=[],
+        success=True,
+        statistics={
+            "evaluated_expectations": 0,
+            "successful_expectations": 0,
+            "unsuccessful_expectations": 0,
+            "success_percent": None,
+        },
+        meta={
+            "great_expectations_version": "v0.8.0__develop",
+            "expectation_suite_name": "asset.default",
+            "run_id": "test_100",
+        },
+        ge_cloud_id=UUID(validation_result_suite_ge_cloud_id),
+    )
+
+
+@pytest.fixture(scope="module")
 def validation_result_suite_id():
     return ValidationResultIdentifier(
         expectation_suite_identifier=ExpectationSuiteIdentifier("asset.default"),
-        run_id="test_100",
+        run_id=RunIdentifier(run_name="test_100"),
         batch_identifier="1234",
     )
 
@@ -115,3 +158,20 @@ def validation_result_suite_extended_id():
             batch_identifier="1234", data_asset_name="asset"
         ),
     )
+
+
+@pytest.fixture
+def aws_credentials():
+    """Mocked AWS Credentials for moto."""
+    os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+    os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
+    os.environ["AWS_SECURITY_TOKEN"] = "testing"
+    os.environ["AWS_SESSION_TOKEN"] = "testing"
+    os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
+
+
+@pytest.fixture
+def sns(aws_credentials):
+    with mock_sns():
+        conn = boto3.client("sns")
+        yield conn

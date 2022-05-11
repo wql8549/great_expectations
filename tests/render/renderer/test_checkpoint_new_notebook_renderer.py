@@ -1,11 +1,67 @@
+import os
+import shutil
+
 import nbformat
 import pytest
 
+import great_expectations as ge
 from great_expectations import DataContext
 from great_expectations.data_context import BaseDataContext
+from great_expectations.data_context.util import file_relative_path
 from great_expectations.render.renderer.checkpoint_new_notebook_renderer import (
     CheckpointNewNotebookRenderer,
 )
+
+
+@pytest.fixture
+def assetless_dataconnector_context(
+    tmp_path_factory,
+    monkeypatch,
+):
+    # Re-enable GE_USAGE_STATS
+    monkeypatch.delenv("GE_USAGE_STATS")
+
+    project_path = str(tmp_path_factory.mktemp("titanic_data_context"))
+    context_path = os.path.join(project_path, "great_expectations")
+    os.makedirs(os.path.join(context_path, "expectations"), exist_ok=True)
+    data_path = os.path.join(context_path, "..", "data", "titanic")
+    os.makedirs(os.path.join(data_path), exist_ok=True)
+    shutil.copy(
+        file_relative_path(
+            __file__,
+            "../../test_fixtures/great_expectations_v013_no_datasource_stats_enabled.yml",
+        ),
+        str(os.path.join(context_path, "great_expectations.yml")),
+    )
+    context = ge.data_context.DataContext(context_path)
+    assert context.root_directory == context_path
+
+    datasource_config = f"""
+            class_name: Datasource
+
+            execution_engine:
+                class_name: PandasExecutionEngine
+
+            data_connectors:
+                my_other_data_connector:
+                    class_name: ConfiguredAssetFilesystemDataConnector
+                    base_directory: {data_path}
+                    glob_directive: "*.csv"
+
+                    default_regex:
+                        pattern: (.+)\\.csv
+                        group_names:
+                            - name
+                    assets:
+                        {{}}
+            """
+
+    context.test_yaml_config(
+        name="my_datasource", yaml_config=datasource_config, pretty_print=False
+    )
+    # noinspection PyProtectedMember
+    context._save_project_config()
+    return context
 
 
 def test_find_datasource_with_asset_on_context_with_no_datasources(
@@ -145,7 +201,7 @@ def checkpoint_new_notebook_assets():
         {
             "cell_type": "markdown",
             "metadata": {},
-            "source": """# Create a Checkpoint Configuration\n\n**If you are new to Great Expectations or the Checkpoint feature**, you should start with SimpleCheckpoint because it includes default configurations like a default list of post validation actions.\n\nIn the cell below we have created a sample Checkpoint configuration using **your configuration** and **SimpleCheckpoint** to run a single validation of a single Expectation Suite against a single Batch of data.\n\nTo keep it simple, we are just choosing the first available instance of each of the following items you have configured in your Data Context:\n* Datasource\n* DataConnector\n* DataAsset\n* Partition\n* Expectation Suite\n\nOf course this is purely an example, you may edit this to your heart's content.\n\n**My configuration is not so simple - are there more advanced options?**\n\nGlad you asked! Checkpoints are very versatile. For example, you can validate many Batches in a single Checkpoint, validate Batches against different Expectation Suites or against many Expectation Suites, control the specific post-validation actions based on Expectation Suite / Batch / results of validation among other features. Check out our documentation on Checkpoints for more details and for instructions on how to implement other more advanced features including using the **Checkpoint** class:\n- https://docs.greatexpectations.io/en/latest/reference/core_concepts/checkpoints_and_actions.html\n- https://docs.greatexpectations.io/en/latest/guides/how_to_guides/validation/how_to_create_a_new_checkpoint.html\n- https://docs.greatexpectations.io/en/latest/guides/how_to_guides/validation/how_to_create_a_new_checkpoint_using_test_yaml_config.html""",
+            "source": """# Create a Checkpoint Configuration\n\n**If you are new to Great Expectations or the Checkpoint feature**, you should start with SimpleCheckpoint because it includes default configurations like a default list of post validation actions.\n\nIn the cell below we have created a sample Checkpoint configuration using **your configuration** and **SimpleCheckpoint** to run a single validation of a single Expectation Suite against a single Batch of data.\n\nTo keep it simple, we are just choosing the first available instance of each of the following items you have configured in your Data Context:\n* Datasource\n* DataConnector\n* DataAsset\n* Partition\n* Expectation Suite\n\nOf course this is purely an example, you may edit this to your heart's content.\n\n**My configuration is not so simple - are there more advanced options?**\n\nGlad you asked! Checkpoints are very versatile. For example, you can validate many Batches in a single Checkpoint, validate Batches against different Expectation Suites or against many Expectation Suites, control the specific post-validation actions based on Expectation Suite / Batch / results of validation among other features. Check out our documentation on Checkpoints for more details and for instructions on how to implement other more advanced features including using the **Checkpoint** class:\n- https://docs.greatexpectations.io/docs/reference/checkpoints_and_actions\n- https://docs.greatexpectations.io/docs/guides/validation/checkpoints/how_to_create_a_new_checkpoint\n- https://docs.greatexpectations.io/docs/guides/validation/checkpoints/how_to_configure_a_new_checkpoint_using_test_yaml_config""",
         },
     ]
     sample_checkpoint_config_code_correct = [
@@ -155,7 +211,7 @@ def checkpoint_new_notebook_assets():
             "execution_count": None,
             "source": (
                 'my_checkpoint_name = "my_checkpoint_name"  # This was populated from your CLI command.\n\n'
-                'my_checkpoint_name_config = f"""\n'
+                'yaml_config = f"""\n'
                 "name: {my_checkpoint_name}\n"
                 """config_version: 1.0
 class_name: SimpleCheckpoint
@@ -170,7 +226,7 @@ validations:
     expectation_suite_name: Titanic.warning
 """
                 '"""'
-                "\nprint(my_checkpoint_name_config)"
+                "\nprint(yaml_config)"
             ),
             "outputs": [],
         },
@@ -193,7 +249,7 @@ validations:
             "cell_type": "code",
             "metadata": {},
             "execution_count": None,
-            "source": """my_checkpoint = context.test_yaml_config(yaml_config=my_checkpoint_name_config)""",
+            "source": """my_checkpoint = context.test_yaml_config(yaml_config=yaml_config)""",
             "outputs": [],
         },
     ]
@@ -207,7 +263,7 @@ validations:
             "cell_type": "code",
             "metadata": {},
             "execution_count": None,
-            "source": "print(my_checkpoint.get_substituted_config().to_yaml_str())",
+            "source": 'print(my_checkpoint.get_config(mode="yaml"))',
             "outputs": [],
         },
     ]
@@ -221,7 +277,7 @@ validations:
             "cell_type": "code",
             "metadata": {},
             "execution_count": None,
-            "source": f"context.add_checkpoint(**yaml.load(my_checkpoint_name_config))",
+            "source": "context.add_checkpoint(**yaml.load(yaml_config))",
             "outputs": [],
         },
     ]
