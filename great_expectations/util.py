@@ -31,6 +31,7 @@ from typing import Any, Callable, List, Optional, Set, Tuple, Union
 import numpy as np
 import pandas as pd
 from dateutil.parser import parse
+from numpy import isnan
 from packaging import version
 from pkg_resources import Distribution
 
@@ -1320,12 +1321,32 @@ def is_nan(value: Any) -> bool:
     Returns:
         The results of the test
     """
-    import numpy as np
-
     try:
-        return np.isnan(value)
+        return isnan(value)
     except TypeError:
         return True
+
+
+def _is_nan_or_none(scalar: Any) -> bool:
+    """Return True if scalar is NaN or None"""
+    try:
+        result = isnan(scalar)
+    except TypeError:
+        result = scalar == None
+    return result
+
+
+def are_nan_inclusive_inputs_equal(first: Any, second: Any) -> bool:
+    """Did you know that `float("nan") != float("nan")`?"""
+    if first == second:
+        return True
+    elif isinstance(first, list) and isinstance(second, list):
+        return all(
+            are_nan_inclusive_inputs_equal(first=f, second=s)
+            for f, s in zip(first, second)
+        )
+    else:
+        return _is_nan_or_none(first) and _is_nan_or_none(second)
 
 
 def is_candidate_subset_of_target(candidate: Any, target: Any) -> bool:

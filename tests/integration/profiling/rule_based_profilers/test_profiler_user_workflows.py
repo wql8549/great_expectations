@@ -2009,10 +2009,38 @@ def test_quentin_expect_column_values_to_be_in_set_auto_yes_default_profiler_con
         "batch_id": "84000630d1b69a0fe870c94fb26a32bc",
     }
 
-    value_set_expected: List[int] = [0, 1, 2, 3, 4, 5, 6, 7]
+    nan = float("nan")
+    value_set_expected: List[int] = [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        nan,
+        nan,
+        nan,
+        nan,
+        nan,
+        nan,
+        nan,
+        nan,
+        nan,
+        nan,
+        nan,
+        nan,
+        nan,
+        nan,
+        nan,
+        nan,
+        nan,
+        nan,
+    ]
     value_set_computed: List[int] = result.expectation_config["kwargs"]["value_set"]
 
-    assert value_set_computed == value_set_expected
+    assert are_nan_inclusive_inputs_equal(value_set_computed, value_set_expected)
 
 
 @pytest.mark.skipif(

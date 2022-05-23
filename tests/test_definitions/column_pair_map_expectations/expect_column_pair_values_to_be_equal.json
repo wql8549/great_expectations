@@ -134,7 +134,7 @@
       },
       "out" : {
         "unexpected_list": [
-          [6.0,null], [7.0,null], [8.0,null], [9.0,null]
+          [6.0,NaN], [7.0,NaN], [8.0,NaN], [9.0,NaN]
         ],
         "success": false
       }
@@ -147,7 +147,7 @@
       },
       "out" : {
         "unexpected_list": [
-          [6.0,null], [7.0,null], [8.0,null], [9.0,null]
+          [6.0,NaN], [7.0,NaN], [8.0,NaN], [9.0,NaN]
         ],
         "success": false
       }
@@ -160,7 +160,7 @@
       },
       "out" : {
         "unexpected_list": [
-          [6.0,null], [7.0,null], [8.0,null], [9.0,null]
+          [6.0,NaN], [7.0,NaN], [8.0,NaN], [9.0,NaN]
         ],
         "success": false
       }
@@ -174,7 +174,7 @@
       },
       "out" : {
         "unexpected_list": [
-          [6.0,null], [7.0,null], [8.0,null], [9.0,null]
+          [6.0,NaN], [7.0,NaN], [8.0,NaN], [9.0,NaN]
         ],
         "success": true
       }
