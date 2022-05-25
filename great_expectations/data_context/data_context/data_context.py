@@ -5,8 +5,9 @@ import warnings
 from typing import Dict, Optional, Union
 
 import requests
-from ruamel.yaml import YAML, YAMLError
+from ruamel.yaml import YAML
 from ruamel.yaml.constructor import DuplicateKeyError
+from ruamel.yaml.error import YAMLError
 
 import great_expectations.exceptions as ge_exceptions
 from great_expectations.data_context.data_context.base_data_context import (
