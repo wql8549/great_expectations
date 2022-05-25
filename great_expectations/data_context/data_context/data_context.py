@@ -10,6 +10,9 @@ from ruamel.yaml.constructor import DuplicateKeyError
 from ruamel.yaml.error import YAMLError
 
 import great_expectations.exceptions as ge_exceptions
+from great_expectations.data_context.data_context.base_data_context import (
+    BaseDataContext,
+)
 from great_expectations.data_context.data_context.file_data_context import (
     FileDataContext,
 )
@@ -225,7 +228,7 @@ class DataContext(FileDataContext):
     ) -> Dict[str, Optional[str]]:
         ge_cloud_base_url = (
             ge_cloud_base_url
-            or super()._get_global_config_value(
+            or BaseDataContext._get_global_config_value(
                 environment_variable="GE_CLOUD_BASE_URL",
                 conf_file_section="ge_cloud_config",
                 conf_file_option="base_url",
@@ -240,14 +243,14 @@ class DataContext(FileDataContext):
                 "deprecated in the next major release."
             )
         else:
-            ge_cloud_account_id = super()._get_global_config_value(
+            ge_cloud_account_id = BaseDataContext._get_global_config_value(
                 environment_variable="GE_CLOUD_ACCOUNT_ID",
                 conf_file_section="ge_cloud_config",
                 conf_file_option="account_id",
             )
 
         if ge_cloud_organization_id is None:
-            ge_cloud_organization_id = super()._get_global_config_value(
+            ge_cloud_organization_id = BaseDataContext._get_global_config_value(
                 environment_variable="GE_CLOUD_ORGANIZATION_ID",
                 conf_file_section="ge_cloud_config",
                 conf_file_option="organization_id",
@@ -256,7 +259,7 @@ class DataContext(FileDataContext):
         ge_cloud_organization_id = ge_cloud_organization_id or ge_cloud_account_id
         ge_cloud_access_token = (
             ge_cloud_access_token
-            or super()._get_global_config_value(
+            or BaseDataContext._get_global_config_value(
                 environment_variable="GE_CLOUD_ACCESS_TOKEN",
                 conf_file_section="ge_cloud_config",
                 conf_file_option="access_token",
@@ -268,7 +271,24 @@ class DataContext(FileDataContext):
             "access_token": ge_cloud_access_token,
         }
 
-    # TODO: deprecate ge_cloud_ascount_id
+    # TODO: This was added here to keep pytest happy. will be moved to cloud_data_context
+    @property
+    def ge_cloud_config(self) -> Optional[GeCloudConfig]:
+        return self._ge_cloud_config
+
+    # TODO: This was added here to keep pytest happy. Will be moved to cloud_data_context
+    @property
+    def ge_cloud_mode(self) -> bool:
+        return self._ge_cloud_mode
+
+    # TODO: This was added here to keep pytest happy. Will be moved to cloud_data_context
+    @property
+    def root_directory(self):
+        """The root directory for configuration objects in the data context; the location in which
+        ``great_expectations.yml`` is located."""
+        return self._context_root_directory
+
+    # TODO: deprecate ge_cloud_account_id
     def get_ge_cloud_config(
         self,
         ge_cloud_base_url: Optional[str] = None,
@@ -294,7 +314,7 @@ class DataContext(FileDataContext):
         if len(missing_keys) > 0:
             missing_keys_str = [f'"{key}"' for key in missing_keys]
             global_config_path_str = [
-                f'"{path}"' for path in super().GLOBAL_CONFIG_PATHS
+                f'"{path}"' for path in BaseDataContext.GLOBAL_CONFIG_PATHS
             ]
             raise DataContextError(
                 f"{(', ').join(missing_keys_str)} arg(s) required for ge_cloud_mode but neither provided nor found in "
@@ -345,7 +365,8 @@ class DataContext(FileDataContext):
         self._context_root_directory = context_root_directory
 
         project_config = self._load_project_config()
-        super().__init__(
+        # this would need to be the BaseDataContext
+        BaseDataContext.__init__(
             project_config,
             context_root_directory,
             runtime_environment,
@@ -400,6 +421,7 @@ class DataContext(FileDataContext):
 
         :return: the configuration object read from the file or template
         """
+        # TODO: move to CloudDataContext
         if self.ge_cloud_mode:
             config = self._retrieve_data_context_config_from_ge_cloud()
             return config
@@ -446,7 +468,7 @@ class DataContext(FileDataContext):
     def add_store(self, store_name, store_config):
         logger.debug(f"Starting DataContext.add_store for store {store_name}")
 
-        new_store = super().add_store(store_name, store_config)
+        new_store = BaseDataContext.add_store(store_name, store_config)
         self._save_project_config()
         return new_store
 
@@ -457,7 +479,7 @@ class DataContext(FileDataContext):
 
         new_datasource: Optional[
             Union[LegacyDatasource, BaseDatasource]
-        ] = super().add_datasource(name=name, **kwargs)
+        ] = BaseDataContext.add_datasource(name=name, **kwargs)
         self._save_project_config()
 
         return new_datasource
@@ -465,7 +487,7 @@ class DataContext(FileDataContext):
     def delete_datasource(self, name: str) -> None:
         logger.debug(f"Starting DataContext.delete_datasource for datasource {name}")
 
-        super().delete_datasource(datasource_name=name)
+        BaseDataContext.delete_datasource(datasource_name=name)
         self._save_project_config()
 
     @classmethod

@@ -1,5 +1,5 @@
 import logging
-from abc import ABC, abstractmethod
+from abc import ABC
 from enum import Enum
 from typing import Union
 
@@ -37,8 +37,9 @@ class ConfigPeer(ABC):
     business object will contain a reference to its corresponding peer class, supporting the ConfigPeer interfaces.
     """
 
+    # @property
+    #    @abstractmethod
     @property
-    @abstractmethod
     def config(self) -> BaseYamlConfig:
         pass
 

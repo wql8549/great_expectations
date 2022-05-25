@@ -74,5 +74,3 @@ class AbstractDataContext(ConfigPeer):
         + TEST_YAML_CONFIG_SUPPORTED_PROFILER_TYPES
     )
     """ """
-
-    pass
