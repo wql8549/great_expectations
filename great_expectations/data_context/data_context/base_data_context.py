@@ -358,25 +358,27 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
         Returns:
             None
         """
-        super().__init__(
-            project_config=project_config, runtime_environment=runtime_environment
-        )
         if not BaseDataContext.validate_config(project_config):
             raise ge_exceptions.InvalidConfigError(
                 "Your project_config is not valid. Try using the CLI check-config command."
             )
+
         self._ge_cloud_mode = ge_cloud_mode
         self._ge_cloud_config = ge_cloud_config
+        # what to do about this? is it a file system thing only?
+        if context_root_dir is not None:
+            context_root_dir = os.path.abspath(context_root_dir)
+        self._context_root_directory = context_root_dir
+
+        super().__init__(
+            project_config=project_config, runtime_environment=runtime_environment
+        )
+
         # self._project_config = project_config
         # self._apply_global_config_overrides()
 
         # we need to update the cloud config!
         self._init_stores(self.project_config_with_variables_substituted.stores)
-
-        # what to do about this? is it a file system thing only?
-        if context_root_dir is not None:
-            context_root_dir = os.path.abspath(context_root_dir)
-        self._context_root_directory = context_root_dir
 
         # self.runtime_environment = runtime_environment or {}
 

@@ -220,7 +220,7 @@ class AbstractDataContext(ConfigPeer, ABC):
             config = self.config
 
         substituted_config_variables = substitute_all_config_variables(
-            self.config_variables,
+            {},  # self.config_variables,
             dict(os.environ),
             self.DOLLAR_SIGN_ESCAPE_STRING,
         )
