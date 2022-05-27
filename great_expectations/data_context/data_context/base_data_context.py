@@ -1,8 +1,6 @@
-import configparser
 import copy
 import datetime
 import errno
-import json
 import logging
 import os
 import sys
@@ -82,7 +80,6 @@ from great_expectations.data_context.types.base import (
     DatasourceConfig,
     GeCloudConfig,
     ProgressBarsConfig,
-    anonymizedUsageStatisticsSchema,
     dataContextConfigSchema,
     datasourceConfigSchema,
 )
@@ -246,27 +243,27 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
     # PROFILING_ERROR_CODE_MULTIPLE_BATCH_KWARGS_GENERATORS_FOUND = 5
 
     # Related to file: anything that uses these should be under FileDataContext
-    UNCOMMITTED_DIRECTORIES = ["data_docs", "validations"]
-    GE_UNCOMMITTED_DIR = "uncommitted"
-    BASE_DIRECTORIES = [
-        DataContextConfigDefaults.CHECKPOINTS_BASE_DIRECTORY.value,
-        DataContextConfigDefaults.EXPECTATIONS_BASE_DIRECTORY.value,
-        DataContextConfigDefaults.PLUGINS_BASE_DIRECTORY.value,
-        DataContextConfigDefaults.PROFILERS_BASE_DIRECTORY.value,
-        GE_UNCOMMITTED_DIR,
-    ]
-    GE_DIR = "great_expectations"
-    GE_YML = "great_expectations.yml"
-    GE_EDIT_NOTEBOOK_DIR = GE_UNCOMMITTED_DIR
+    # UNCOMMITTED_DIRECTORIES = ["data_docs", "validations"]
+    # GE_UNCOMMITTED_DIR = "uncommitted"
+    # BASE_DIRECTORIES = [
+    #     DataContextConfigDefaults.CHECKPOINTS_BASE_DIRECTORY.value,
+    #     DataContextConfigDefaults.EXPECTATIONS_BASE_DIRECTORY.value,
+    #     DataContextConfigDefaults.PLUGINS_BASE_DIRECTORY.value,
+    #     DataContextConfigDefaults.PROFILERS_BASE_DIRECTORY.value,
+    #     GE_UNCOMMITTED_DIR,
+    # ]
+    # GE_DIR = "great_expectations"
+    # GE_YML = "great_expectations.yml"
+    # GE_EDIT_NOTEBOOK_DIR = GE_UNCOMMITTED_DIR
 
     # this is the one that we refer to in this file
-    FALSEY_STRINGS = ["FALSE", "false", "False", "f", "F", "0"]
+    # FALSEY_STRINGS = ["FALSE", "false", "False", "f", "F", "0"]
 
     # Related to file: anything that uses this should be under FileDataContext
-    GLOBAL_CONFIG_PATHS = [
-        os.path.expanduser("~/.great_expectations/great_expectations.conf"),
-        "/etc/great_expectations.conf",
-    ]
+    # GLOBAL_CONFIG_PATHS = [
+    #     os.path.expanduser("~/.great_expectations/great_expectations.conf"),
+    #     "/etc/great_expectations.conf",
+    # ]
 
     DOLLAR_SIGN_ESCAPE_STRING = r"\$"
     # TEST_YAML_CONFIG_SUPPORTED_STORE_TYPES = [
@@ -368,8 +365,9 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
         self._ge_cloud_mode = ge_cloud_mode
         self._ge_cloud_config = ge_cloud_config
         # self._project_config = project_config
-        self._apply_global_config_overrides()
+        # self._apply_global_config_overrides()
 
+        # what to do about this? is it a file system thing only?
         if context_root_dir is not None:
             context_root_dir = os.path.abspath(context_root_dir)
         self._context_root_directory = context_root_dir
@@ -383,13 +381,13 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
             sys.path.append(self.plugins_directory)
 
         # We want to have directories set up before initializing usage statistics so that we can obtain a context instance id
-        self._in_memory_instance_id = (
-            None  # This variable *may* be used in case we cannot save an instance id
-        )
+        # self._in_memory_instance_id = (
+        #     None  # This variable *may* be used in case we cannot save an instance id
+        # )
 
-        # Init stores
-        self._stores = {}
-        self._init_stores(self.project_config_with_variables_substituted.stores)
+        # # Init stores
+        # self._stores = {}
+        # self._init_stores(self.project_config_with_variables_substituted.stores)
 
         # Init data_context_id
         self._data_context_id = self._construct_data_context_id()
@@ -869,13 +867,13 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
         )
         return os.path.isdir(profiler_directory_path)
 
-    @property
-    def expectations_store_name(self) -> Optional[str]:
-        return self.project_config_with_variables_substituted.expectations_store_name
-
-    @property
-    def expectations_store(self) -> ExpectationsStore:
-        return self.stores[self.expectations_store_name]
+    # @property
+    # def expectations_store_name(self) -> Optional[str]:
+    #     return self.project_config_with_variables_substituted.expectations_store_name
+    #
+    # @property
+    # def expectations_store(self) -> ExpectationsStore:
+    #     return self.stores[self.expectations_store_name]
 
     @property
     def data_context_id(self):

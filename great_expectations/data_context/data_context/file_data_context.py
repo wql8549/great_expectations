@@ -1,6 +1,9 @@
+import os
+
 from great_expectations.data_context.data_context.abstract_data_context import (
     AbstractDataContext,
 )
+from great_expectations.data_context.types.base import DataContextConfigDefaults
 
 
 class FileDataContext(AbstractDataContext):
