@@ -64,8 +64,11 @@ from great_expectations.core.usage_statistics.usage_statistics import (
 )
 from great_expectations.core.util import nested_update
 from great_expectations.data_asset import DataAsset
-from great_expectations.data_context.store import Store, TupleStoreBackend
-from great_expectations.data_context.store.expectations_store import ExpectationsStore
+from great_expectations.data_context.store import (
+    ExpectationsStore,
+    Store,
+    TupleStoreBackend,
+)
 from great_expectations.data_context.store.profiler_store import ProfilerStore
 from great_expectations.data_context.store.validations_store import ValidationsStore
 from great_expectations.data_context.templates import CONFIG_VARIABLES_TEMPLATE
@@ -313,7 +316,7 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
     #     + TEST_YAML_CONFIG_SUPPORTED_PROFILER_TYPES
     # )
 
-    _data_context = None
+    # _data_context = None
 
     @classmethod
     def validate_config(cls, project_config: Union[DataContextConfig, Mapping]) -> bool:
@@ -390,19 +393,19 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
         # self._init_stores(self.project_config_with_variables_substituted.stores)
 
         # Init data_context_id
-        self._data_context_id = self._construct_data_context_id()
+        # self._data_context_id = self._construct_data_context_id()
 
         # Override the project_config data_context_id if an expectations_store was already set up
-        self.config.anonymous_usage_statistics.data_context_id = self._data_context_id
+        # self.config.anonymous_usage_statistics.data_context_id = self._data_context_id
         self._initialize_usage_statistics(
             self.project_config_with_variables_substituted.anonymous_usage_statistics
         )
-
-        # Store cached datasources but don't init them
-        self._cached_datasources = {}
-
-        # Build the datasources we know about and have access to
-        self._init_datasources(self.project_config_with_variables_substituted)
+        #
+        # # Store cached datasources but don't init them
+        # self._cached_datasources = {}
+        #
+        # # Build the datasources we know about and have access to
+        # self._init_datasources(self.project_config_with_variables_substituted)
 
         # Init validation operators
         # NOTE - 20200522 - JPC - A consistent approach to lazy loading for plugins will be useful here, harmonizing
@@ -428,75 +431,77 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
 
         self._assistants = DataAssistantDispatcher(data_context=self)
 
+    # TODO: cut this over to cloud_data_context
     @property
     def ge_cloud_config(self) -> Optional[GeCloudConfig]:
         return self._ge_cloud_config
 
+    # TODO: cut this over to cloud_data_context
     @property
     def ge_cloud_mode(self) -> bool:
         return self._ge_cloud_mode
 
-    def _build_store_from_config(
-        self, store_name: str, store_config: dict
-    ) -> Optional[Store]:
-        module_name = "great_expectations.data_context.store"
-        # Set expectations_store.store_backend_id to the data_context_id from the project_config if
-        # the expectations_store does not yet exist by:
-        # adding the data_context_id from the project_config
-        # to the store_config under the key manually_initialize_store_backend_id
-        if (store_name == self.expectations_store_name) and store_config.get(
-            "store_backend"
-        ):
-            store_config["store_backend"].update(
-                {
-                    "manually_initialize_store_backend_id": self.project_config_with_variables_substituted.anonymous_usage_statistics.data_context_id
-                }
-            )
+    # def _build_store_from_config(
+    #     self, store_name: str, store_config: dict
+    # ) -> Optional[Store]:
+    #     module_name = "great_expectations.data_context.store"
+    #     # Set expectations_store.store_backend_id to the data_context_id from the project_config if
+    #     # the expectations_store does not yet exist by:
+    #     # adding the data_context_id from the project_config
+    #     # to the store_config under the key manually_initialize_store_backend_id
+    #     if (store_name == self.expectations_store_name) and store_config.get(
+    #         "store_backend"
+    #     ):
+    #         store_config["store_backend"].update(
+    #             {
+    #                 "manually_initialize_store_backend_id": self.project_config_with_variables_substituted.anonymous_usage_statistics.data_context_id
+    #             }
+    #         )
+    #
+    #     # Set suppress_store_backend_id = True if store is inactive and has a store_backend.
+    #     if (
+    #         store_name not in [store["name"] for store in self.list_active_stores()]
+    #         and store_config.get("store_backend") is not None
+    #     ):
+    #         store_config["store_backend"].update({"suppress_store_backend_id": True})
+    #
+    #     new_store = build_store_from_config(
+    #         store_name=store_name,
+    #         store_config=store_config,
+    #         module_name=module_name,
+    #         runtime_environment={
+    #             "root_directory": self.root_directory,
+    #         },
+    #     )
+    #     self._stores[store_name] = new_store
+    #     return new_store
 
-        # Set suppress_store_backend_id = True if store is inactive and has a store_backend.
-        if (
-            store_name not in [store["name"] for store in self.list_active_stores()]
-            and store_config.get("store_backend") is not None
-        ):
-            store_config["store_backend"].update({"suppress_store_backend_id": True})
+    # def _init_stores(self, store_configs: Dict[str, dict]) -> None:
+    #     """Initialize all Stores for this DataContext.
+    #
+    #     Stores are a good fit for reading/writing objects that:
+    #         1. follow a clear key-value pattern, and
+    #         2. are usually edited programmatically, using the Context
+    #
+    #     Note that stores do NOT manage plugins.
+    #     """
+    #     for store_name, store_config in store_configs.items():
+    #         self._build_store_from_config(store_name, store_config)
 
-        new_store = build_store_from_config(
-            store_name=store_name,
-            store_config=store_config,
-            module_name=module_name,
-            runtime_environment={
-                "root_directory": self.root_directory,
-            },
-        )
-        self._stores[store_name] = new_store
-        return new_store
-
-    def _init_stores(self, store_configs: Dict[str, dict]) -> None:
-        """Initialize all Stores for this DataContext.
-
-        Stores are a good fit for reading/writing objects that:
-            1. follow a clear key-value pattern, and
-            2. are usually edited programmatically, using the Context
-
-        Note that stores do NOT manage plugins.
-        """
-        for store_name, store_config in store_configs.items():
-            self._build_store_from_config(store_name, store_config)
-
-    def _init_datasources(self, config: DataContextConfig) -> None:
-        if not config.datasources:
-            return
-        for datasource_name in config.datasources:
-            try:
-                self._cached_datasources[datasource_name] = self.get_datasource(
-                    datasource_name=datasource_name
-                )
-            except ge_exceptions.DatasourceInitializationError as e:
-                logger.warning(f"Cannot initialize datasource {datasource_name}: {e}")
-                # this error will happen if our configuration contains datasources that GE can no longer connect to.
-                # this is ok, as long as we don't use it to retrieve a batch. If we try to do that, the error will be
-                # caught at the context.get_batch() step. So we just pass here.
-                pass
+    # def _init_datasources(self, config: DataContextConfig) -> None:
+    #     if not config.datasources:
+    #         return
+    #     for datasource_name in config.datasources:
+    #         try:
+    #             self._cached_datasources[datasource_name] = self.get_datasource(
+    #                 datasource_name=datasource_name
+    #             )
+    #         except ge_exceptions.DatasourceInitializationError as e:
+    #             logger.warning(f"Cannot initialize datasource {datasource_name}: {e}")
+    #             # this error will happen if our configuration contains datasources that GE can no longer connect to.
+    #             # this is ok, as long as we don't use it to retrieve a batch. If we try to do that, the error will be
+    #             # caught at the context.get_batch() step. So we just pass here.
+    #             pass
 
     def _construct_data_context_id(self) -> str:
         """
@@ -509,19 +514,21 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
         # if in ge_cloud_mode, use ge_cloud_organization_id
         if self.ge_cloud_mode:
             return self.ge_cloud_config.organization_id
-        # Choose the id of the currently-configured expectations store, if it is a persistent store
-        expectations_store = self._stores[
-            self.project_config_with_variables_substituted.expectations_store_name
-        ]
-        if isinstance(expectations_store.store_backend, TupleStoreBackend):
-            # suppress_warnings since a warning will already have been issued during the store creation if there was an invalid store config
-            return expectations_store.store_backend_id_warnings_suppressed
-
-        # Otherwise choose the id stored in the project_config
         else:
-            return (
-                self.project_config_with_variables_substituted.anonymous_usage_statistics.data_context_id
-            )
+            return super()._construct_data_context_id()
+        # # Choose the id of the currently-configured expectations store, if it is a persistent store
+        # expectations_store = self._stores[
+        #     self.project_config_with_variables_substituted.expectations_store_name
+        # ]
+        # if isinstance(expectations_store.store_backend, TupleStoreBackend):
+        #     # suppress_warnings since a warning will already have been issued during the store creation if there was an invalid store config
+        #     return expectations_store.store_backend_id_warnings_suppressed
+        #
+        # # Otherwise choose the id stored in the project_config
+        # else:
+        #     return (
+        #         self.project_config_with_variables_substituted.anonymous_usage_statistics.data_context_id
+        #     )
 
     def _initialize_usage_statistics(
         self, usage_statistics_config: AnonymizedUsageStatisticsConfig

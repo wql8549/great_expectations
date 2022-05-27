@@ -2,17 +2,28 @@ import configparser
 import json
 import logging
 import os
-from abc import ABC
+from abc import ABC, abstractmethod
 from typing import Dict, Mapping, Optional, Union
 
+import great_expectations.exceptions.exceptions as ge_exceptions
 from great_expectations.core.yaml_handler import YAMLHandler
-from great_expectations.data_context.store import ExpectationsStore, Store
+from great_expectations.data_context.store import (
+    ExpectationsStore,
+    Store,
+    TupleStoreBackend,
+)
 from great_expectations.data_context.types.base import (
     DataContextConfig,
     DataContextConfigDefaults,
     anonymizedUsageStatisticsSchema,
 )
 from great_expectations.data_context.util import build_store_from_config
+
+# this is here because of circular imports
+from great_expectations.rule_based_profiler import (
+    RuleBasedProfiler,
+    RuleBasedProfilerResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +113,8 @@ class AbstractDataContext(ABC):
         "/etc/great_expectations.conf",
     ]
 
+    _data_context = None
+
     def __init__(
         self,
         project_config: Union[DataContextConfig, Mapping],
@@ -121,6 +134,18 @@ class AbstractDataContext(ABC):
         # Init stores
         self._stores = {}
         self._init_stores(self.project_config_with_variables_substituted.stores)
+
+        # Init data_context_id
+        self._data_context_id = self._construct_data_context_id()
+
+        # Override the project_config data_context_id if an expectations_store was already set up
+        self.config.anonymous_usage_statistics.data_context_id = self._data_context_id
+
+        # Store cached datasources but don't init them
+        self._cached_datasources = {}
+
+        # Build the datasources we know about and have access to
+        self._init_datasources(self.project_config_with_variables_substituted)
 
     ### properties
     @property
@@ -261,11 +286,20 @@ class AbstractDataContext(ABC):
     def _build_store_from_config(
         self, store_name: str, store_config: dict
     ) -> Optional[Store]:
+        """
+        Set expectations_store.store_backend_id to the data_context_id from the project_config if
+        the expectations_store does not yet exist by:
+        adding the data_context_id from the project_config
+        to the store_config under the key manually_initialize_store_backend_id
+
+        Args:
+            store_name ():
+            store_config ():
+
+        Returns:
+            TODO
+        """
         module_name = "great_expectations.data_context.store"
-        # Set expectations_store.store_backend_id to the data_context_id from the project_config if
-        # the expectations_store does not yet exist by:
-        # adding the data_context_id from the project_config
-        # to the store_config under the key manually_initialize_store_backend_id
         if (store_name == self.expectations_store_name) and store_config.get(
             "store_backend"
         ):
@@ -304,3 +338,54 @@ class AbstractDataContext(ABC):
         """
         for store_name, store_config in store_configs.items():
             self._build_store_from_config(store_name, store_config)
+
+    def _init_datasources(self, config: DataContextConfig) -> None:
+        """
+        Initializes datasources from config. Called by the __init__() stage.
+
+        If configuration contains datasources that GE can no longer connect to.
+        Raises a warning, because that won't break anything until we try to retrieve a batch with it.
+        The error will be caught at the context.get_batch() step.
+
+        Args:
+            config (DataContextConfig): Config associated with current AbstractDataContext
+        """
+        if not config.datasources:
+            return
+        for datasource_name in config.datasources:
+            try:
+                self._cached_datasources[datasource_name] = self.get_datasource(
+                    datasource_name=datasource_name
+                )
+            except ge_exceptions.DatasourceInitializationError as e:
+                logger.warning(f"Cannot initialize datasource {datasource_name}: {e}")
+                # this error will happen if our configuration contains datasources that GE can no longer connect to.
+                # this is ok, as long as we don't use it to retrieve a batch. If we try to do that, the error will be
+                # caught at the context.get_batch() step. So we just pass here.
+                pass
+
+    def _construct_data_context_id(self) -> str:
+        """
+        Choose the id of the currently-configured expectations store, if available and a persistent store.
+        If not, it should choose the id stored in DataContextConfig.
+
+        TODO: cloud is handled at the BaseDataContext level for now. It will need to be moved to CloudDataContext. Stub exists.
+        ID is returned from :
+            1) store
+            2) config
+        Returns:
+            UUID to use as data_context_id
+        """
+        # Choose the id of the currently-configured expectations store, if it is a persistent store
+        expectations_store = self._stores[
+            self.project_config_with_variables_substituted.expectations_store_name
+        ]
+        if isinstance(expectations_store.store_backend, TupleStoreBackend):
+            # suppress_warnings since a warning will already have been issued during the store creation if there was an invalid store config
+            return expectations_store.store_backend_id_warnings_suppressed
+
+        # Otherwise choose the id stored in the project_config
+        else:
+            return (
+                self.project_config_with_variables_substituted.anonymous_usage_statistics.data_context_id
+            )
