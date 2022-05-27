@@ -145,6 +145,8 @@ class AbstractDataContext(ConfigPeer, ABC):
 
         # Init stores
         self._stores = {}
+
+        # need to split this
         self._init_stores(self.project_config_with_variables_substituted.stores)
 
         # Init data_context_id
@@ -202,7 +204,38 @@ class AbstractDataContext(ConfigPeer, ABC):
 
     @property
     def project_config_with_variables_substituted(self) -> DataContextConfig:
-        return self.get_config_with_variables_substituted()
+        return self.get_config_with_variables_substituted_from_env()
+
+    def get_config_with_variables_substituted_from_env(self, config=None):
+        """
+        TODO: this method is previously
+            get_config_with_variables_substituted()
+        Args:
+            config ():
+
+        Returns:
+
+        """
+        if not config:
+            config = self.config
+
+        substituted_config_variables = substitute_all_config_variables(
+            self.config_variables,
+            dict(os.environ),
+            self.DOLLAR_SIGN_ESCAPE_STRING,
+        )
+        # TODO: Check this with CDkini so that we aren't lying
+        # Substitutions should have already occurred for GE Cloud configs at this point
+        substitutions = {
+            **substituted_config_variables,
+            **dict(os.environ),
+            **self.runtime_environment,
+        }
+        return DataContextConfig(
+            **substitute_all_config_variables(
+                config, substitutions, self.DOLLAR_SIGN_ESCAPE_STRING
+            )
+        )
 
     ### private methods
     def _apply_global_config_overrides(self) -> None:

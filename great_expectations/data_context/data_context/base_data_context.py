@@ -370,6 +370,9 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
         # self._project_config = project_config
         # self._apply_global_config_overrides()
 
+        # we need to update the cloud config!
+        self._init_stores(self.project_config_with_variables_substituted.stores)
+
         # what to do about this? is it a file system thing only?
         if context_root_dir is not None:
             context_root_dir = os.path.abspath(context_root_dir)
@@ -390,7 +393,9 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
 
         # # Init stores
         # self._stores = {}
-        # self._init_stores(self.project_config_with_variables_substituted.stores)
+
+        # how do you split out the stores logic?
+        self._init_stores(self.project_config_with_variables_substituted.stores)
 
         # Init data_context_id
         # self._data_context_id = self._construct_data_context_id()
@@ -596,6 +601,7 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
     #     self.validation_operators[validation_operator_name] = new_validation_operator
     #     return new_validation_operator
 
+    # TODO: move this to FileDataContext logic
     def _normalize_absolute_or_relative_path(
         self, path: Optional[str]
     ) -> Optional[str]:
@@ -606,6 +612,7 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
         else:
             return os.path.join(self.root_directory, path)
 
+    # TODO: move this to FileDataContext logic
     def _normalize_store_path(self, resource_store):
         if resource_store["type"] == "filesystem":
             if not os.path.isabs(resource_store["base_directory"]):
@@ -753,9 +760,9 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
     def usage_statistics_handler(self) -> Optional[UsageStatisticsHandler]:
         return self._usage_statistics_handler
 
-    # @property
-    # def project_config_with_variables_substituted(self) -> DataContextConfig:
-    #     return self.get_config_with_variables_substituted()
+    @property
+    def project_config_with_variables_substituted(self) -> DataContextConfig:
+        return self.get_config_with_variables_substituted_cloud_mode()
 
     @property
     def anonymous_usage_statistics(self):
@@ -898,6 +905,7 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
             self._in_memory_instance_id = instance_id
         return instance_id
 
+    # This could be refactored into 3 parts: depending on which mode we are using
     @property
     def config_variables(self):
         # Note Abe 20121114 : We should probably cache config_variables instead of loading them from disk every time.
@@ -918,7 +926,8 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
         Get all config variables from the default location. For Data Contexts in GE Cloud mode, config variables
         have already been interpolated before being sent from the Cloud API.
         """
-        if self.ge_cloud_mode:
+        # TODO this is the key
+        if hasattr(self, "ge_cloud_mode") and self.ge_cloud_mode:
             return {}
         config_variables_file_path = cast(
             DataContextConfig, self.get_config()
@@ -946,7 +955,12 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
         else:
             return {}
 
-    def get_config_with_variables_substituted(self, config=None) -> DataContextConfig:
+    # def get_config_with_variables_substituted_cloud_mode(self, config=None) -> DataContextConfig:
+    #    pass
+
+    def get_config_with_variables_substituted_cloud_mode(
+        self, config=None
+    ) -> DataContextConfig:
         """
         Substitute vars in config of form ${var} or $(var) with values found in the following places,
         in order of precedence: ge_cloud_config (for Data Contexts in GE Cloud mode), runtime_environment,
@@ -959,6 +973,7 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
             config = self.config
 
         substituted_config_variables = substitute_all_config_variables(
+            # this is where we are doing this
             self.config_variables,
             dict(os.environ),
             self.DOLLAR_SIGN_ESCAPE_STRING,
