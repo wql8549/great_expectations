@@ -6,31 +6,43 @@ from abc import ABC, abstractmethod
 from typing import Dict, Mapping, Optional, Union
 
 import great_expectations.exceptions.exceptions as ge_exceptions
+from great_expectations.core.config_peer import ConfigPeer
 from great_expectations.core.yaml_handler import YAMLHandler
-from great_expectations.data_context.store import (
-    ExpectationsStore,
-    Store,
-    TupleStoreBackend,
-)
 from great_expectations.data_context.types.base import (
+    AnonymizedUsageStatisticsConfig,
     DataContextConfig,
     DataContextConfigDefaults,
     anonymizedUsageStatisticsSchema,
 )
-from great_expectations.data_context.util import build_store_from_config
+from great_expectations.data_context.util import (
+    build_store_from_config,
+    instantiate_class_from_config,
+    substitute_all_config_variables,
+)
+from great_expectations.rule_based_profiler.data_assistant.data_assistant_dispatcher import (
+    DataAssistantDispatcher,
+)
+
+from great_expectations.core.usage_statistics.usage_statistics import (  # isort: skip
+    UsageStatisticsHandler,
+)
+
+#
+from great_expectations.data_context.store import ExpectationsStore  # isort:skip
+from great_expectations.data_context.store import Store  # isort:skip
+from great_expectations.data_context.store import TupleStoreBackend  # isort:skip
 
 # this is here because of circular imports
-from great_expectations.rule_based_profiler import (
-    RuleBasedProfiler,
-    RuleBasedProfilerResult,
-)
+from great_expectations.rule_based_profiler import RuleBasedProfiler  # isort:skip
+from great_expectations.rule_based_profiler import RuleBasedProfilerResult  # isort:skip
+
 
 logger = logging.getLogger(__name__)
 
 yaml: YAMLHandler = YAMLHandler()
 
 
-class AbstractDataContext(ABC):
+class AbstractDataContext(ConfigPeer, ABC):
     """
     Base class for all DataContexts that contain all context-agnostic data context operations.
 
@@ -140,12 +152,40 @@ class AbstractDataContext(ABC):
 
         # Override the project_config data_context_id if an expectations_store was already set up
         self.config.anonymous_usage_statistics.data_context_id = self._data_context_id
+        self._initialize_usage_statistics(
+            self.project_config_with_variables_substituted.anonymous_usage_statistics
+        )
 
         # Store cached datasources but don't init them
         self._cached_datasources = {}
 
         # Build the datasources we know about and have access to
         self._init_datasources(self.project_config_with_variables_substituted)
+
+        # Init validation operators
+        # NOTE - 20200522 - JPC - A consistent approach to lazy loading for plugins will be useful here, harmonizing
+        # the way that execution environments (AKA datasources), validation operators, site builders and other
+        # plugins are built.
+        self.validation_operators = {}
+        # NOTE - 20210112 - Alex Sherstinsky - Validation Operators are planned to be deprecated.
+        if (
+            "validation_operators" in self.get_config().commented_map
+            and self.config.validation_operators
+        ):
+            for (
+                validation_operator_name,
+                validation_operator_config,
+            ) in self.config.validation_operators.items():
+                self.add_validation_operator(
+                    validation_operator_name,
+                    validation_operator_config,
+                )
+
+        self._evaluation_parameter_dependencies_compiled = False
+        self._evaluation_parameter_dependencies = {}
+
+        # is this something we need too?
+        self._assistants = DataAssistantDispatcher(data_context=self)
 
     ### properties
     @property
@@ -155,6 +195,14 @@ class AbstractDataContext(ABC):
     @property
     def expectations_store(self) -> ExpectationsStore:
         return self.stores[self.expectations_store_name]
+
+    @property
+    def config(self) -> DataContextConfig:
+        return self._project_config
+
+    @property
+    def project_config_with_variables_substituted(self) -> DataContextConfig:
+        return self.get_config_with_variables_substituted()
 
     ### private methods
     def _apply_global_config_overrides(self) -> None:
@@ -389,3 +437,72 @@ class AbstractDataContext(ABC):
             return (
                 self.project_config_with_variables_substituted.anonymous_usage_statistics.data_context_id
             )
+
+    def _initialize_usage_statistics(
+        self, usage_statistics_config: AnonymizedUsageStatisticsConfig
+    ) -> None:
+        """Initialize the usage statistics system."""
+        if not usage_statistics_config.enabled:
+            logger.info("Usage statistics is disabled; skipping initialization.")
+            self._usage_statistics_handler = None
+            return
+
+        self._usage_statistics_handler = UsageStatisticsHandler(
+            data_context=self,
+            data_context_id=self._data_context_id,
+            usage_statistics_url=usage_statistics_config.usage_statistics_url,
+        )
+
+    # def get_config_with_variables_substituted(self, config=None) -> DataContextConfig:
+    #     """
+    #     Substitute vars in config of form ${var} or $(var) with values found in the following places,
+    #     in order of precedence: ge_cloud_config (for Data Contexts in GE Cloud mode), runtime_environment,
+    #     environment variables, config_variables, or ge_cloud_config_variable_defaults (allows certain variables to
+    #     be optional in GE Cloud mode).
+    #     """
+    #     if not config:
+    #         config = self.config
+    #
+    #     substituted_config_variables = substitute_all_config_variables(
+    #         self.config_variables,
+    #         dict(os.environ),
+    #         self.DOLLAR_SIGN_ESCAPE_STRING,
+    #     )
+
+    # Public method
+    def add_validation_operator(
+        self, validation_operator_name: str, validation_operator_config: dict
+    ) -> "ValidationOperator":
+        """Add a new ValidationOperator to the DataContext and (for convenience) return the instantiated object.
+
+        Args:
+            validation_operator_name (str): a key for the new ValidationOperator in in self._validation_operators
+            validation_operator_config (dict): a config for the ValidationOperator to add
+
+        Returns:
+            validation_operator (ValidationOperator)
+        """
+
+        self.config["validation_operators"][
+            validation_operator_name
+        ] = validation_operator_config
+        config = self.project_config_with_variables_substituted.validation_operators[
+            validation_operator_name
+        ]
+        module_name = "great_expectations.validation_operators"
+        new_validation_operator = instantiate_class_from_config(
+            config=config,
+            runtime_environment={
+                "data_context": self,
+                "name": validation_operator_name,
+            },
+            config_defaults={"module_name": module_name},
+        )
+        if not new_validation_operator:
+            raise ge_exceptions.ClassInstantiationError(
+                module_name=module_name,
+                package_name=None,
+                class_name=config["class_name"],
+            )
+        self.validation_operators[validation_operator_name] = new_validation_operator
+        return new_validation_operator

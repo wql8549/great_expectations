@@ -397,9 +397,9 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
 
         # Override the project_config data_context_id if an expectations_store was already set up
         # self.config.anonymous_usage_statistics.data_context_id = self._data_context_id
-        self._initialize_usage_statistics(
-            self.project_config_with_variables_substituted.anonymous_usage_statistics
-        )
+        # self._initialize_usage_statistics(
+        #     self.project_config_with_variables_substituted.anonymous_usage_statistics
+        # )
         #
         # # Store cached datasources but don't init them
         # self._cached_datasources = {}
@@ -411,25 +411,25 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
         # NOTE - 20200522 - JPC - A consistent approach to lazy loading for plugins will be useful here, harmonizing
         # the way that execution environments (AKA datasources), validation operators, site builders and other
         # plugins are built.
-        self.validation_operators = {}
-        # NOTE - 20210112 - Alex Sherstinsky - Validation Operators are planned to be deprecated.
-        if (
-            "validation_operators" in self.get_config().commented_map
-            and self.config.validation_operators
-        ):
-            for (
-                validation_operator_name,
-                validation_operator_config,
-            ) in self.config.validation_operators.items():
-                self.add_validation_operator(
-                    validation_operator_name,
-                    validation_operator_config,
-                )
-
-        self._evaluation_parameter_dependencies_compiled = False
-        self._evaluation_parameter_dependencies = {}
-
-        self._assistants = DataAssistantDispatcher(data_context=self)
+        # self.validation_operators = {}
+        # # NOTE - 20210112 - Alex Sherstinsky - Validation Operators are planned to be deprecated.
+        # if (
+        #     "validation_operators" in self.get_config().commented_map
+        #     and self.config.validation_operators
+        # ):
+        #     for (
+        #         validation_operator_name,
+        #         validation_operator_config,
+        #     ) in self.config.validation_operators.items():
+        #         self.add_validation_operator(
+        #             validation_operator_name,
+        #             validation_operator_config,
+        #         )
+        #
+        # self._evaluation_parameter_dependencies_compiled = False
+        # self._evaluation_parameter_dependencies = {}
+        #
+        # self._assistants = DataAssistantDispatcher(data_context=self)
 
     # TODO: cut this over to cloud_data_context
     @property
@@ -530,20 +530,20 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
         #         self.project_config_with_variables_substituted.anonymous_usage_statistics.data_context_id
         #     )
 
-    def _initialize_usage_statistics(
-        self, usage_statistics_config: AnonymizedUsageStatisticsConfig
-    ) -> None:
-        """Initialize the usage statistics system."""
-        if not usage_statistics_config.enabled:
-            logger.info("Usage statistics is disabled; skipping initialization.")
-            self._usage_statistics_handler = None
-            return
-
-        self._usage_statistics_handler = UsageStatisticsHandler(
-            data_context=self,
-            data_context_id=self._data_context_id,
-            usage_statistics_url=usage_statistics_config.usage_statistics_url,
-        )
+    # def _initialize_usage_statistics(
+    #     self, usage_statistics_config: AnonymizedUsageStatisticsConfig
+    # ) -> None:
+    #     """Initialize the usage statistics system."""
+    #     if not usage_statistics_config.enabled:
+    #         logger.info("Usage statistics is disabled; skipping initialization.")
+    #         self._usage_statistics_handler = None
+    #         return
+    #
+    #     self._usage_statistics_handler = UsageStatisticsHandler(
+    #         data_context=self,
+    #         data_context_id=self._data_context_id,
+    #         usage_statistics_url=usage_statistics_config.usage_statistics_url,
+    #     )
 
     def add_store(self, store_name: str, store_config: dict) -> Optional[Store]:
         """Add a new Store to the DataContext and (for convenience) return the instantiated Store object.
@@ -559,42 +559,42 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
         self.config["stores"][store_name] = store_config
         return self._build_store_from_config(store_name, store_config)
 
-    def add_validation_operator(
-        self, validation_operator_name: str, validation_operator_config: dict
-    ) -> "ValidationOperator":
-        """Add a new ValidationOperator to the DataContext and (for convenience) return the instantiated object.
-
-        Args:
-            validation_operator_name (str): a key for the new ValidationOperator in in self._validation_operators
-            validation_operator_config (dict): a config for the ValidationOperator to add
-
-        Returns:
-            validation_operator (ValidationOperator)
-        """
-
-        self.config["validation_operators"][
-            validation_operator_name
-        ] = validation_operator_config
-        config = self.project_config_with_variables_substituted.validation_operators[
-            validation_operator_name
-        ]
-        module_name = "great_expectations.validation_operators"
-        new_validation_operator = instantiate_class_from_config(
-            config=config,
-            runtime_environment={
-                "data_context": self,
-                "name": validation_operator_name,
-            },
-            config_defaults={"module_name": module_name},
-        )
-        if not new_validation_operator:
-            raise ge_exceptions.ClassInstantiationError(
-                module_name=module_name,
-                package_name=None,
-                class_name=config["class_name"],
-            )
-        self.validation_operators[validation_operator_name] = new_validation_operator
-        return new_validation_operator
+    # def add_validation_operator(
+    #     self, validation_operator_name: str, validation_operator_config: dict
+    # ) -> "ValidationOperator":
+    #     """Add a new ValidationOperator to the DataContext and (for convenience) return the instantiated object.
+    #
+    #     Args:
+    #         validation_operator_name (str): a key for the new ValidationOperator in in self._validation_operators
+    #         validation_operator_config (dict): a config for the ValidationOperator to add
+    #
+    #     Returns:
+    #         validation_operator (ValidationOperator)
+    #     """
+    #
+    #     self.config["validation_operators"][
+    #         validation_operator_name
+    #     ] = validation_operator_config
+    #     config = self.project_config_with_variables_substituted.validation_operators[
+    #         validation_operator_name
+    #     ]
+    #     module_name = "great_expectations.validation_operators"
+    #     new_validation_operator = instantiate_class_from_config(
+    #         config=config,
+    #         runtime_environment={
+    #             "data_context": self,
+    #             "name": validation_operator_name,
+    #         },
+    #         config_defaults={"module_name": module_name},
+    #     )
+    #     if not new_validation_operator:
+    #         raise ge_exceptions.ClassInstantiationError(
+    #             module_name=module_name,
+    #             package_name=None,
+    #             class_name=config["class_name"],
+    #         )
+    #     self.validation_operators[validation_operator_name] = new_validation_operator
+    #     return new_validation_operator
 
     def _normalize_absolute_or_relative_path(
         self, path: Optional[str]
@@ -753,9 +753,9 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
     def usage_statistics_handler(self) -> Optional[UsageStatisticsHandler]:
         return self._usage_statistics_handler
 
-    @property
-    def project_config_with_variables_substituted(self) -> DataContextConfig:
-        return self.get_config_with_variables_substituted()
+    # @property
+    # def project_config_with_variables_substituted(self) -> DataContextConfig:
+    #     return self.get_config_with_variables_substituted()
 
     @property
     def anonymous_usage_statistics(self):
@@ -952,6 +952,8 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
         in order of precedence: ge_cloud_config (for Data Contexts in GE Cloud mode), runtime_environment,
         environment variables, config_variables, or ge_cloud_config_variable_defaults (allows certain variables to
         be optional in GE Cloud mode).
+
+
         """
         if not config:
             config = self.config
@@ -968,7 +970,7 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
             **dict(os.environ),
             **self.runtime_environment,
         }
-
+        # TODO: this is cloud_mode so it will need to be split
         if self.ge_cloud_mode:
             ge_cloud_config_variable_defaults = {
                 "plugins_directory": self._normalize_absolute_or_relative_path(
