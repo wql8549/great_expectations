@@ -151,6 +151,7 @@ def test_validation_operator_evaluation_parameters(
     assert res["success"] is False
 
 
+# This is currently failing
 def test_action_list_operator(validation_operators_data_context):
     data_context = validation_operators_data_context
     validator_batch_kwargs = data_context.build_batch_kwargs(
@@ -175,6 +176,9 @@ def test_action_list_operator(validation_operators_data_context):
     validation_result_store_keys = data_context.stores[
         "validation_result_store"
     ].list_keys()
+    print("hello")
+
+    # This is where we are
     assert len(validation_result_store_keys) == 2
     assert operator_result.success
 

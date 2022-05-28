@@ -363,16 +363,16 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
                 "Your project_config is not valid. Try using the CLI check-config command."
             )
 
+        super().__init__(
+            project_config=project_config, runtime_environment=runtime_environment
+        )
+
         self._ge_cloud_mode = ge_cloud_mode
         self._ge_cloud_config = ge_cloud_config
         # what to do about this? is it a file system thing only?
         if context_root_dir is not None:
             context_root_dir = os.path.abspath(context_root_dir)
         self._context_root_directory = context_root_dir
-
-        super().__init__(
-            project_config=project_config, runtime_environment=runtime_environment
-        )
 
         # self._project_config = project_config
         # self._apply_global_config_overrides()
@@ -782,34 +782,34 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
     def notebooks(self):
         return self.project_config_with_variables_substituted.notebooks
 
-    @property
-    def stores(self):
-        """A single holder for all Stores in this context"""
-        return self._stores
+    # @property
+    # def stores(self):
+    #     """A single holder for all Stores in this context"""
+    #     return self._stores
+    #
+    # @property
+    # def datasources(self) -> Dict[str, Union[LegacyDatasource, BaseDatasource]]:
+    #     """A single holder for all Datasources in this context"""
+    #     return self._cached_datasources
 
-    @property
-    def datasources(self) -> Dict[str, Union[LegacyDatasource, BaseDatasource]]:
-        """A single holder for all Datasources in this context"""
-        return self._cached_datasources
-
-    @property
-    def checkpoint_store_name(self):
-        try:
-            return self.project_config_with_variables_substituted.checkpoint_store_name
-        except AttributeError:
-            from great_expectations.data_context.store.checkpoint_store import (
-                CheckpointStore,
-            )
-
-            if CheckpointStore.default_checkpoints_exist(
-                directory_path=self.root_directory
-            ):
-                return DataContextConfigDefaults.DEFAULT_CHECKPOINT_STORE_NAME.value
-            if self.root_directory:
-                error_message: str = f'Attempted to access the "checkpoint_store_name" field with no `checkpoints` directory.\n  Please create the following directory: {os.path.join(self.root_directory, DataContextConfigDefaults.DEFAULT_CHECKPOINT_STORE_BASE_DIRECTORY_RELATIVE_NAME.value)}\n  To use the new "Checkpoint Store" feature, please update your configuration to the new version number {float(CURRENT_GE_CONFIG_VERSION)}.\n  Visit https://docs.greatexpectations.io/docs/guides/miscellaneous/migration_guide#migrating-to-the-batch-request-v3-api to learn more about the upgrade process.'
-            else:
-                error_message: str = f'Attempted to access the "checkpoint_store_name" field with no `checkpoints` directory.\n  Please create a `checkpoints` directory in your Great Expectations project " f"directory.\n  To use the new "Checkpoint Store" feature, please update your configuration to the new version number {float(CURRENT_GE_CONFIG_VERSION)}.\n  Visit https://docs.greatexpectations.io/docs/guides/miscellaneous/migration_guide#migrating-to-the-batch-request-v3-api to learn more about the upgrade process.'
-            raise ge_exceptions.InvalidTopLevelConfigKeyError(error_message)
+    # @property
+    # def checkpoint_store_name(self):
+    #     try:
+    #         return self.project_config_with_variables_substituted.checkpoint_store_name
+    #     except AttributeError:
+    #         from great_expectations.data_context.store.checkpoint_store import (
+    #             CheckpointStore,
+    #         )
+    #
+    #         if CheckpointStore.default_checkpoints_exist(
+    #             directory_path=self.root_directory
+    #         ):
+    #             return DataContextConfigDefaults.DEFAULT_CHECKPOINT_STORE_NAME.value
+    #         if self.root_directory:
+    #             error_message: str = f'Attempted to access the "checkpoint_store_name" field with no `checkpoints` directory.\n  Please create the following directory: {os.path.join(self.root_directory, DataContextConfigDefaults.DEFAULT_CHECKPOINT_STORE_BASE_DIRECTORY_RELATIVE_NAME.value)}\n  To use the new "Checkpoint Store" feature, please update your configuration to the new version number {float(CURRENT_GE_CONFIG_VERSION)}.\n  Visit https://docs.greatexpectations.io/docs/guides/miscellaneous/migration_guide#migrating-to-the-batch-request-v3-api to learn more about the upgrade process.'
+    #         else:
+    #             error_message: str = f'Attempted to access the "checkpoint_store_name" field with no `checkpoints` directory.\n  Please create a `checkpoints` directory in your Great Expectations project " f"directory.\n  To use the new "Checkpoint Store" feature, please update your configuration to the new version number {float(CURRENT_GE_CONFIG_VERSION)}.\n  Visit https://docs.greatexpectations.io/docs/guides/miscellaneous/migration_guide#migrating-to-the-batch-request-v3-api to learn more about the upgrade process.'
+    #         raise ge_exceptions.InvalidTopLevelConfigKeyError(error_message)
 
     @property
     def checkpoint_store(self) -> "CheckpointStore":  # noqa: F821
@@ -837,20 +837,20 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
                 f'Attempted to access the Checkpoint store named "{checkpoint_store_name}", which is not a configured store.'
             )
 
-    @property
-    def profiler_store_name(self) -> str:
-        try:
-            return self.project_config_with_variables_substituted.profiler_store_name
-        except AttributeError:
-            if BaseDataContext._default_profilers_exist(
-                directory_path=self.root_directory
-            ):
-                return DataContextConfigDefaults.DEFAULT_PROFILER_STORE_NAME.value
-            if self.root_directory:
-                error_message: str = f'Attempted to access the "profiler_store_name" field with no `profilers` directory.\n  Please create the following directory: {os.path.join(self.root_directory, DataContextConfigDefaults.DEFAULT_PROFILER_STORE_BASE_DIRECTORY_RELATIVE_NAME.value)}\n  To use the new "Profiler Store" feature, please update your configuration to the new version number {float(CURRENT_GE_CONFIG_VERSION)}.\n  Visit https://docs.greatexpectations.io/docs/guides/miscellaneous/migration_guide#migrating-to-the-batch-request-v3-api to learn more about the upgrade process.'
-            else:
-                error_message: str = f'Attempted to access the "profiler_store_name" field with no `profilers` directory.\n  Please create a `profilers` directory in your Great Expectations project " f"directory.\n  To use the new "Profiler Store" feature, please update your configuration to the new version number {float(CURRENT_GE_CONFIG_VERSION)}.\n  Visit https://docs.greatexpectations.io/docs/guides/miscellaneous/migration_guide#migrating-to-the-batch-request-v3-api to learn more about the upgrade process.'
-            raise ge_exceptions.InvalidTopLevelConfigKeyError(error_message)
+    # @property
+    # def profiler_store_name(self) -> str:
+    #     try:
+    #         return self.project_config_with_variables_substituted.profiler_store_name
+    #     except AttributeError:
+    #         if BaseDataContext._default_profilers_exist(
+    #             directory_path=self.root_directory
+    #         ):
+    #             return DataContextConfigDefaults.DEFAULT_PROFILER_STORE_NAME.value
+    #         if self.root_directory:
+    #             error_message: str = f'Attempted to access the "profiler_store_name" field with no `profilers` directory.\n  Please create the following directory: {os.path.join(self.root_directory, DataContextConfigDefaults.DEFAULT_PROFILER_STORE_BASE_DIRECTORY_RELATIVE_NAME.value)}\n  To use the new "Profiler Store" feature, please update your configuration to the new version number {float(CURRENT_GE_CONFIG_VERSION)}.\n  Visit https://docs.greatexpectations.io/docs/guides/miscellaneous/migration_guide#migrating-to-the-batch-request-v3-api to learn more about the upgrade process.'
+    #         else:
+    #             error_message: str = f'Attempted to access the "profiler_store_name" field with no `profilers` directory.\n  Please create a `profilers` directory in your Great Expectations project " f"directory.\n  To use the new "Profiler Store" feature, please update your configuration to the new version number {float(CURRENT_GE_CONFIG_VERSION)}.\n  Visit https://docs.greatexpectations.io/docs/guides/miscellaneous/migration_guide#migrating-to-the-batch-request-v3-api to learn more about the upgrade process.'
+    #         raise ge_exceptions.InvalidTopLevelConfigKeyError(error_message)
 
     @property
     def profiler_store(self) -> ProfilerStore:
@@ -2065,52 +2065,52 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
             stores.append(masked_config)
         return stores
 
-    def list_active_stores(self):
-        """
-        List active Stores on this context. Active stores are identified by setting the following parameters:
-            expectations_store_name,
-            validations_store_name,
-            evaluation_parameter_store_name,
-            checkpoint_store_name
-            profiler_store_name
-        """
-        active_store_names: List[str] = [
-            self.expectations_store_name,
-            self.validations_store_name,
-            self.evaluation_parameter_store_name,
-        ]
-
-        try:
-            active_store_names.append(self.checkpoint_store_name)
-        except (AttributeError, ge_exceptions.InvalidTopLevelConfigKeyError):
-            logger.info(
-                "Checkpoint store is not configured; omitting it from active stores"
-            )
-
-        try:
-            active_store_names.append(self.profiler_store_name)
-        except (AttributeError, ge_exceptions.InvalidTopLevelConfigKeyError):
-            logger.info(
-                "Profiler store is not configured; omitting it from active stores"
-            )
-
-        return [
-            store for store in self.list_stores() if store["name"] in active_store_names
-        ]
-
-    def list_validation_operators(self):
-        """List currently-configured Validation Operators on this context"""
-
-        validation_operators = []
-        for (
-            name,
-            value,
-        ) in (
-            self.project_config_with_variables_substituted.validation_operators.items()
-        ):
-            value["name"] = name
-            validation_operators.append(value)
-        return validation_operators
+    # def list_active_stores(self):
+    #     """
+    #     List active Stores on this context. Active stores are identified by setting the following parameters:
+    #         expectations_store_name,
+    #         validations_store_name,
+    #         evaluation_parameter_store_name,
+    #         checkpoint_store_name
+    #         profiler_store_name
+    #     """
+    #     active_store_names: List[str] = [
+    #         self.expectations_store_name,
+    #         self.validations_store_name,
+    #         self.evaluation_parameter_store_name,
+    #     ]
+    #
+    #     try:
+    #         active_store_names.append(self.checkpoint_store_name)
+    #     except (AttributeError, ge_exceptions.InvalidTopLevelConfigKeyError):
+    #         logger.info(
+    #             "Checkpoint store is not configured; omitting it from active stores"
+    #         )
+    #
+    #     try:
+    #         active_store_names.append(self.profiler_store_name)
+    #     except (AttributeError, ge_exceptions.InvalidTopLevelConfigKeyError):
+    #         logger.info(
+    #             "Profiler store is not configured; omitting it from active stores"
+    #         )
+    #
+    #     return [
+    #         store for store in self.list_stores() if store["name"] in active_store_names
+    #     ]
+    #
+    # def list_validation_operators(self):
+    #     """List currently-configured Validation Operators on this context"""
+    #
+    #     validation_operators = []
+    #     for (
+    #         name,
+    #         value,
+    #     ) in (
+    #         self.project_config_with_variables_substituted.validation_operators.items()
+    #     ):
+    #         value["name"] = name
+    #         validation_operators.append(value)
+    #     return validation_operators
 
     def send_usage_message(
         self, event: str, event_payload: Optional[dict], success: Optional[bool] = None
@@ -2406,27 +2406,27 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
             target_store_name,
         )
 
-    @property
-    def evaluation_parameter_store(self):
-        return self.stores[self.evaluation_parameter_store_name]
-
-    @property
-    def evaluation_parameter_store_name(self):
-        return (
-            self.project_config_with_variables_substituted.evaluation_parameter_store_name
-        )
-
-    @property
-    def validations_store_name(self):
-        return self.project_config_with_variables_substituted.validations_store_name
-
-    @property
-    def validations_store(self) -> ValidationsStore:
-        return self.stores[self.validations_store_name]
-
-    @property
-    def assistants(self) -> DataAssistantDispatcher:
-        return self._assistants
+    # @property
+    # def evaluation_parameter_store(self):
+    #     return self.stores[self.evaluation_parameter_store_name]
+    #
+    # @property
+    # def evaluation_parameter_store_name(self):
+    #     return (
+    #         self.project_config_with_variables_substituted.evaluation_parameter_store_name
+    #     )
+    #
+    # @property
+    # def validations_store_name(self):
+    #     return self.project_config_with_variables_substituted.validations_store_name
+    #
+    # @property
+    # def validations_store(self) -> ValidationsStore:
+    #     return self.stores[self.validations_store_name]
+    #
+    # @property
+    # def assistants(self) -> DataAssistantDispatcher:
+    #     return self._assistants
 
     def _compile_evaluation_parameter_dependencies(self) -> None:
         self._evaluation_parameter_dependencies = {}

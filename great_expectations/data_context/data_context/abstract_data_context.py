@@ -1,9 +1,10 @@
 import configparser
+import copy
 import json
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import Dict, Mapping, Optional, Union
+from typing import Dict, List, Mapping, Optional, Union
 
 import great_expectations.exceptions.exceptions as ge_exceptions
 from great_expectations.core.config_peer import ConfigPeer
@@ -15,20 +16,26 @@ from great_expectations.data_context.types.base import (
     anonymizedUsageStatisticsSchema,
 )
 from great_expectations.data_context.util import (
+    PasswordMasker,
     build_store_from_config,
     instantiate_class_from_config,
     substitute_all_config_variables,
 )
+from great_expectations.datasource import BaseDatasource, LegacyDatasource
 from great_expectations.rule_based_profiler.data_assistant.data_assistant_dispatcher import (
     DataAssistantDispatcher,
+)
+
+#
+from great_expectations.data_context.store import (  # isort:skip
+    ExpectationsStore,
+    ValidationsStore,
 )
 
 from great_expectations.core.usage_statistics.usage_statistics import (  # isort: skip
     UsageStatisticsHandler,
 )
 
-#
-from great_expectations.data_context.store import ExpectationsStore  # isort:skip
 from great_expectations.data_context.store import Store  # isort:skip
 from great_expectations.data_context.store import TupleStoreBackend  # isort:skip
 
@@ -205,6 +212,72 @@ class AbstractDataContext(ConfigPeer, ABC):
     @property
     def project_config_with_variables_substituted(self) -> DataContextConfig:
         return self.get_config_with_variables_substituted_from_env()
+
+    @property
+    def evaluation_parameter_store(self):
+        return self.stores[self.evaluation_parameter_store_name]
+
+    @property
+    def evaluation_parameter_store_name(self):
+        return (
+            self.project_config_with_variables_substituted.evaluation_parameter_store_name
+        )
+
+    @property
+    def validations_store_name(self):
+        return self.project_config_with_variables_substituted.validations_store_name
+
+    @property
+    def validations_store(self) -> ValidationsStore:
+        return self.stores[self.validations_store_name]
+
+    @property
+    def assistants(self) -> DataAssistantDispatcher:
+        return self._assistants
+
+    @property
+    def stores(self):
+        """A single holder for all Stores in this context"""
+        return self._stores
+
+    @property
+    def datasources(self) -> Dict[str, Union[LegacyDatasource, BaseDatasource]]:
+        """A single holder for all Datasources in this context"""
+        return self._cached_datasources
+
+    @property
+    def checkpoint_store_name(self):
+        try:
+            return self.project_config_with_variables_substituted.checkpoint_store_name
+        except AttributeError:
+            from great_expectations.data_context.store.checkpoint_store import (
+                CheckpointStore,
+            )
+
+            if CheckpointStore.default_checkpoints_exist(
+                directory_path=self.root_directory
+            ):
+                return DataContextConfigDefaults.DEFAULT_CHECKPOINT_STORE_NAME.value
+            if self.root_directory:
+                error_message: str = f'Attempted to access the "checkpoint_store_name" field with no `checkpoints` directory.\n  Please create the following directory: {os.path.join(self.root_directory, DataContextConfigDefaults.DEFAULT_CHECKPOINT_STORE_BASE_DIRECTORY_RELATIVE_NAME.value)}\n  To use the new "Checkpoint Store" feature, please update your configuration to the new version number {float(CURRENT_GE_CONFIG_VERSION)}.\n  Visit https://docs.greatexpectations.io/docs/guides/miscellaneous/migration_guide#migrating-to-the-batch-request-v3-api to learn more about the upgrade process.'
+            else:
+                error_message: str = f'Attempted to access the "checkpoint_store_name" field with no `checkpoints` directory.\n  Please create a `checkpoints` directory in your Great Expectations project " f"directory.\n  To use the new "Checkpoint Store" feature, please update your configuration to the new version number {float(CURRENT_GE_CONFIG_VERSION)}.\n  Visit https://docs.greatexpectations.io/docs/guides/miscellaneous/migration_guide#migrating-to-the-batch-request-v3-api to learn more about the upgrade process.'
+            raise ge_exceptions.InvalidTopLevelConfigKeyError(error_message)
+
+    @property
+    def profiler_store_name(self) -> str:
+        try:
+            return self.project_config_with_variables_substituted.profiler_store_name
+        except AttributeError:
+            if BaseDataContext._default_profilers_exist(
+                directory_path=self.root_directory
+            ):
+                return DataContextConfigDefaults.DEFAULT_PROFILER_STORE_NAME.value
+            if self.root_directory:
+                error_message: str = f'Attempted to access the "profiler_store_name" field with no `profilers` directory.\n  Please create the following directory: {os.path.join(self.root_directory, DataContextConfigDefaults.DEFAULT_PROFILER_STORE_BASE_DIRECTORY_RELATIVE_NAME.value)}\n  To use the new "Profiler Store" feature, please update your configuration to the new version number {float(CURRENT_GE_CONFIG_VERSION)}.\n  Visit https://docs.greatexpectations.io/docs/guides/miscellaneous/migration_guide#migrating-to-the-batch-request-v3-api to learn more about the upgrade process.'
+            else:
+                error_message: str = f'Attempted to access the "profiler_store_name" field with no `profilers` directory.\n  Please create a `profilers` directory in your Great Expectations project " f"directory.\n  To use the new "Profiler Store" feature, please update your configuration to the new version number {float(CURRENT_GE_CONFIG_VERSION)}.\n  Visit https://docs.greatexpectations.io/docs/guides/miscellaneous/migration_guide#migrating-to-the-batch-request-v3-api to learn more about the upgrade process.'
+            raise ge_exceptions.InvalidTopLevelConfigKeyError(error_message)
 
     def get_config_with_variables_substituted_from_env(self, config=None):
         """
@@ -539,3 +612,64 @@ class AbstractDataContext(ConfigPeer, ABC):
             )
         self.validation_operators[validation_operator_name] = new_validation_operator
         return new_validation_operator
+
+    def list_stores(self):
+        """List currently-configured Stores on this context"""
+
+        stores = []
+        for (
+            name,
+            value,
+        ) in self.project_config_with_variables_substituted.stores.items():
+            store_config = copy.deepcopy(value)
+            store_config["name"] = name
+            masked_config = PasswordMasker.sanitize_config(store_config)
+            stores.append(masked_config)
+        return stores
+
+    def list_active_stores(self):
+        """
+        List active Stores on this context. Active stores are identified by setting the following parameters:
+            expectations_store_name,
+            validations_store_name,
+            evaluation_parameter_store_name,
+            checkpoint_store_name
+            profiler_store_name
+        """
+        active_store_names: List[str] = [
+            self.expectations_store_name,
+            self.validations_store_name,
+            self.evaluation_parameter_store_name,
+        ]
+
+        try:
+            active_store_names.append(self.checkpoint_store_name)
+        except (AttributeError, ge_exceptions.InvalidTopLevelConfigKeyError):
+            logger.info(
+                "Checkpoint store is not configured; omitting it from active stores"
+            )
+
+        try:
+            active_store_names.append(self.profiler_store_name)
+        except (AttributeError, ge_exceptions.InvalidTopLevelConfigKeyError):
+            logger.info(
+                "Profiler store is not configured; omitting it from active stores"
+            )
+
+        return [
+            store for store in self.list_stores() if store["name"] in active_store_names
+        ]
+
+    def list_validation_operators(self):
+        """List currently-configured Validation Operators on this context"""
+
+        validation_operators = []
+        for (
+            name,
+            value,
+        ) in (
+            self.project_config_with_variables_substituted.validation_operators.items()
+        ):
+            value["name"] = name
+            validation_operators.append(value)
+        return validation_operators
