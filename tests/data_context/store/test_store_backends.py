@@ -1256,6 +1256,7 @@ def test_TupleAzureBlobStoreBackend():
         mock_container_client.list_blobs.assert_called_once_with("this_is_a_prefix")
 
 
+@pytest.mark.integration
 @mock_s3
 def test_TupleS3StoreBackend_list_over_1000_keys():
     """
