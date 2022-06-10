@@ -14,9 +14,11 @@ execution_engine:
     class_name: PandasExecutionEngine
 data_connectors:
     default_runtime_data_connector_name:
-        class_name: RuntimeDataConnector
-        batch_identifiers:
-            - default_identifier_name
+        class_name: RuntimeDataConnector\
+        assets:
+          my_asset_name:
+            batch_identifiers:
+              - default_identifier_name
     default_inferred_data_connector_name:
         class_name: InferredAssetS3DataConnector
         bucket: <YOUR_S3_BUCKET_HERE>
@@ -44,7 +46,7 @@ context.add_datasource(**yaml.load(datasource_yaml))
 batch_request = RuntimeBatchRequest(
     datasource_name="my_s3_datasource",
     data_connector_name="default_runtime_data_connector_name",
-    data_asset_name="<YOUR_MEANGINGFUL_NAME>",  # this can be anything that identifies this data_asset for you
+    data_asset_name="my_asset_name",
     runtime_parameters={"path": "<PATH_TO_YOUR_DATA_HERE>"},  # Add your S3 path here.
     batch_identifiers={"default_identifier_name": "default_identifier"},
 )

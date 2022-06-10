@@ -338,7 +338,7 @@ data_connectors:
   default_runtime_data_connector_name:
     class_name: RuntimeDataConnector
     assets:
-      default_asset_name:
+      my_asset_name:
         - default_identifier_name
 """'''
 
