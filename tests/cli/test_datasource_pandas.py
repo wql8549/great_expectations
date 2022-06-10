@@ -32,6 +32,7 @@ def test_cli_datasource_list_on_project_with_no_datasources(
     stdout = result.stdout.strip()
     assert "No Datasources found" in stdout
     assert context.list_datasources() == []
+    print(f"usage_stats_enabled: {context.config.anonymous_usage_statistics.enabled}")
 
     expected_call_args_list = [
         mock.call(
