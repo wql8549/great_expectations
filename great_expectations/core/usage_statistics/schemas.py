@@ -11,6 +11,7 @@ from great_expectations.core.usage_statistics.anonymizers.types.base import (
 from great_expectations.core.usage_statistics.execution_environment import (
     InstallEnvironment,
 )
+from great_expectations.core.usage_statistics.schema_versions import SCHEMA_VERSIONS
 
 SCHEMA: str = "http://json-schema.org/draft-04/schema#"
 
@@ -295,7 +296,7 @@ anonymized_init_payload_schema = {
     },
     "type": "object",
     "properties": {
-        "version": {"enum": ["1.0.0"]},
+        "version": {"enum": SCHEMA_VERSIONS},
         "platform.system": {"type": "string", "maxLength": 256},
         "platform.release": {"type": "string", "maxLength": 256},
         "version_info": {"type": "string", "maxLength": 256},
@@ -946,7 +947,7 @@ anonymized_usage_statistics_record_schema = {
     },
     "type": "object",
     "properties": {
-        "version": {"enum": ["1.0.0"]},
+        "version": {"enum": SCHEMA_VERSIONS},
         "ge_version": {"type": "string", "maxLength": 32},
         "data_context_id": {"type": "string", "format": "uuid"},
         "data_context_instance_id": {"type": "string", "format": "uuid"},
