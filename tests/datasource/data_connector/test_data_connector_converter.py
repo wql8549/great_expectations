@@ -4,10 +4,11 @@ import pandas as pd
 
 from great_expectations import DataContext
 from great_expectations.checkpoint import Checkpoint
+from great_expectations.core import ExpectationConfiguration
 from great_expectations.core.batch import RuntimeBatchRequest
 
 
-def test_retrieve_asset_from_validation_result(
+def test_retrieve_asset_from_validation_result_file_based(
     titanic_pandas_data_context_with_v013_datasource_with_checkpoints_v1_with_empty_store_stats_enabled,
 ):
     """Investigatory happy path test retrieving asset info from a validation result."""
@@ -66,7 +67,31 @@ def test_retrieve_asset_from_validation_result(
     )
 
     context.create_expectation_suite("my_expectation_suite")
-    # noinspection PyUnusedLocal
+    suite = context.get_expectation_suite("my_expectation_suite")
+    expectation_configuration = ExpectationConfiguration(
+        expectation_type="expect_table_columns_to_match_ordered_list",
+        kwargs={
+            "column_list": [
+                "account_id",
+                "user_id",
+                "transaction_id",
+                "transaction_type",
+                "transaction_amt_usd",
+            ]
+        },
+        meta={
+            "notes": {
+                "format": "markdown",
+                "content": "Some clever comment about this expectation. **Markdown** `Supported`",
+            }
+        },
+    )
+    suite.add_expectation(expectation_configuration=expectation_configuration)
+    context.save_expectation_suite(expectation_suite=suite)
+
+    assert context.list_expectation_suite_names() == ["my_expectation_suite"]
+    assert len(context.get_expectation_suite("my_expectation_suite").expectations) == 1
+
     result = checkpoint.run(
         validations=[
             {"batch_request": runtime_batch_request},
@@ -77,9 +102,22 @@ def test_retrieve_asset_from_validation_result(
     validation_keys: List[str] = context.validations_store.list_keys()
 
     assert len(validation_keys) == 2
-    assert result["success"]
+    assert not result["success"]
 
-    print(context.validations_store.get(validation_keys[1]))
+    # print(context.validations_store.get(validation_keys[1]))
+
+    for validation_key in validation_keys:
+        validation_result = context.validations_store.get(validation_key)
+        # print(type(validation_result))  # <class 'great_expectations.core.expectation_validation_result.ExpectationSuiteValidationResult'>
+        print(validation_result)
+        # print(validation_result["meta"])
+        # print(validation_result["meta"]["active_batch_definition"])
+        # print(validation_result["meta"]["batch_spec"])
+        # print(validation_result["meta"]["great_expectations_version"])
+
+
+def test_retrieve_asset_from_validation_result_sql_based():
+    pass
 
 
 def test_retrieve_asset_from_checkpoint_configuration():
