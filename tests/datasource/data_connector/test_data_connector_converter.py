@@ -13,8 +13,12 @@ from great_expectations.core import (
 )
 from great_expectations.core.batch import BatchRequest, RuntimeBatchRequest
 from great_expectations.data_context.types.base import DataConnectorConfig
+from great_expectations.data_context.util import instantiate_class_from_config
 from great_expectations.datasource import BaseDatasource, DataConnector
-from great_expectations.datasource.data_connector import InferredAssetSqlDataConnector
+from great_expectations.datasource.data_connector import (
+    ConfiguredAssetSqlDataConnector,
+    InferredAssetSqlDataConnector,
+)
 from great_expectations.datasource.data_connector.data_connector_converter import (
     InferredToConfiguredDataConnectorConverter,
 )
@@ -563,6 +567,16 @@ def test_retrieve_asset_from_validation_result_sql_based(empty_data_context):
         "datasource_name": "testing_datasource_name",
         "assets": {"main.table_partitioned_by_date_column__A": {}},
     }
+
+    configured_asset_data_connector: ConfiguredAssetSqlDataConnector = (
+        instantiate_class_from_config(
+            configured_asset_data_connector_config.to_dict(),
+            runtime_environment={"execution_engine": datasource.execution_engine},
+        )
+    )
+    assert configured_asset_data_connector.get_available_data_asset_names() == [
+        "main.table_partitioned_by_date_column__A"
+    ]
 
 
 def test_retrieve_asset_from_checkpoint_configuration():
