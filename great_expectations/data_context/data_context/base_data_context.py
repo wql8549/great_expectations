@@ -3119,6 +3119,7 @@ Generated, evaluated, and stored %d Expectations during profiling. Please review
         return profiling_results
 
     def list_checkpoints(self) -> List[str]:
+        logger.warning("Hi ken this is working I think")
         return self.checkpoint_store.list_checkpoints(ge_cloud_mode=self.ge_cloud_mode)
 
     def add_checkpoint(
