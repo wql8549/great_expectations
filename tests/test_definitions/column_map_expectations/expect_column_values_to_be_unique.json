@@ -162,6 +162,19 @@
         }
       },
       {
+        "title": "positive_case_all_null_values_bigquery_nones",
+        "exact_match_out": false,
+        "only_for": ["bigquery_v2_api"],
+        "in": {
+          "column": "null"
+        },
+        "out": {
+          "success": true,
+          "unexpected_list": [],
+          "unexpected_index_list": []
+        }
+      },
+      {
         "title": "positive_case_all_null_values",
         "exact_match_out": false,
         "suppress_test_for": ["trino", "bigquery"],
