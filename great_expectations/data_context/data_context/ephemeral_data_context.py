@@ -29,7 +29,7 @@ class EphemeralDataContext(AbstractDataContext):
     def __init__(
         self,
         project_config: Union[DataContextConfig, Mapping],
-        runtime_environment: dict,
+        runtime_environment: Optional[dict] = None,
     ) -> None:
         """EphemeralDataContext constructor
 
