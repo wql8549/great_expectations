@@ -16,13 +16,6 @@ from ruamel.yaml.comments import CommentedMap
 
 import great_expectations.exceptions as ge_exceptions
 from great_expectations.core import ExpectationSuite
-from great_expectations.core.batch import (
-    Batch,
-    BatchDefinition,
-    BatchRequestBase,
-    IDDict,
-    get_batch_request_from_acceptable_arguments,
-)
 from great_expectations.core.expectation_validation_result import get_metric_kwargs_id
 from great_expectations.core.metric import ValidationMetricIdentifier
 from great_expectations.core.util import nested_update
@@ -57,7 +50,6 @@ from great_expectations.data_context.util import (
 from great_expectations.datasource import LegacyDatasource
 from great_expectations.datasource.new_datasource import BaseDatasource, Datasource
 from great_expectations.util import load_class, verify_dynamic_loading_support
-from great_expectations.validator.validator import Validator
 
 from great_expectations.core.usage_statistics.usage_statistics import (  # isort: skip
     UsageStatisticsHandler,
@@ -178,8 +170,6 @@ class AbstractDataContext(ABC):
 
         self._evaluation_parameter_dependencies_compiled = False
         self._evaluation_parameter_dependencies = {}
-
-        self._assistants = DataAssistantDispatcher(data_context=self)
 
     @abstractmethod
     def _init_variables(self) -> DataContextVariables:
@@ -429,10 +419,6 @@ class AbstractDataContext(ABC):
     @property
     def concurrency(self) -> Optional[ConcurrencyConfig]:
         return self.project_config_with_variables_substituted.concurrency
-
-    @property
-    def assistants(self) -> DataAssistantDispatcher:
-        return self._assistants
 
     def add_datasource(
         self, name: str, initialize: bool = True, **kwargs: dict

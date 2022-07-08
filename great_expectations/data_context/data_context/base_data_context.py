@@ -316,6 +316,9 @@ class BaseDataContext(EphemeralDataContext, ConfigPeer):
                     validation_operator_name,
                     validation_operator_config,
                 )
+        # NOTE: <DataContextRefactor>  This will be migrated to AbstractDataContext, along with associated methods
+        # and properties.
+        self._assistants = DataAssistantDispatcher(data_context=self)
 
     @property
     def ge_cloud_config(self) -> Optional[GeCloudConfig]:
