@@ -1959,6 +1959,8 @@ class ColumnMapExpectation(TableExpectation, ABC):
             configuration=configuration,
             runtime_configuration=runtime_configuration,
         )
+        print("hello why is this so hard?")
+        print(f"{metric_dependencies}")
         metric_dependencies[
             "column_values.nonnull.unexpected_count"
         ] = MetricConfiguration(
@@ -2075,6 +2077,7 @@ class ColumnMapExpectation(TableExpectation, ABC):
         )
         total_count = metrics.get("table.row_count")
         null_count = metrics.get("column_values.nonnull.unexpected_count")
+        print(f"null count : {null_count}")
         unexpected_count = metrics.get(f"{self.map_metric}.unexpected_count")
         unexpected_values = metrics.get(f"{self.map_metric}.unexpected_values")
         unexpected_index_list = metrics.get(f"{self.map_metric}.unexpected_index_list")

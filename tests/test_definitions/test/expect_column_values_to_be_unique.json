@@ -1,0 +1,117 @@
+{
+  "expectation_type": "expect_column_values_to_be_unique",
+  "datasets" : [{
+    "data" : {
+      "a" : ["2", "2", "2", null],
+      "b" : [1, "2", 2, null],
+      "c" : [1, 1, 2, null],
+      "d" : [1, "1", 2, null],
+      "n" : [null, null, 2, null],
+      "unique" : [1, 2, 3, null],
+      "null": [null, null, null, null],
+      "mult_dup": ["1", "1", "2", "2"]
+    },
+    "schemas": {
+      "spark": {
+        "a": "StringType",
+        "b": "StringType",
+        "c": "IntegerType",
+        "d": "StringType",
+        "n": "IntegerType",
+        "unique": "IntegerType",
+        "null": "NullType",
+        "mult_dup": "StringType"
+      },
+      "mssql": {
+        "a": "VARCHAR",
+        "b": "NVARCHAR",
+        "c": "INTEGER",
+        "d": "NVARCHAR",
+        "n": "INTEGER",
+        "unique": "INTEGER",
+        "null": "NVARCHAR",
+        "mult_dup": "VARCHAR"
+      },
+      "mysql": {
+        "a": "CHAR",
+        "b": "CHAR",
+        "c": "INTEGER",
+        "d": "CHAR",
+        "n": "INTEGER",
+        "unique": "INTEGER",
+        "null": "CHAR",
+        "mult_dup": "CHAR"
+      },
+      "bigquery": {
+        "a": "STRING",
+        "b": "STRING",
+        "c": "NUMERIC",
+        "d": "STRING",
+        "n": "NUMERIC",
+        "unique": "NUMERIC",
+        "null": "STRING",
+        "mult_dup": "STRING"
+      },
+      "trino": {
+        "a": "VARCHAR",
+        "b": "VARCHAR",
+        "c": "INTEGER",
+        "d": "VARCHAR",
+        "n": "INTEGER",
+        "unique": "INTEGER",
+        "null": "VARCHAR",
+        "mult_dup": "VARCHAR"
+      }
+    },
+    "tests" : [
+      {
+        "title": "positive_case_all_null_values_bigquery_nones_v3_api",
+        "exact_match_out": false,
+        "only_for": ["bigquery_cfe"],
+        "in": {
+          "column": "null"
+        },
+        "out": {
+          "success": true,
+          "unexpected_list": [],
+          "unexpected_index_list": []
+        }
+      }
+    ]
+  },
+   {
+    "data" : {
+      "0": [1, 2, 3, 4],
+      "_c0": [1, 2, 3, 4]
+    },
+    "schemas": {
+      "spark": {
+        "0": "IntegerType",
+        "_c0": "IntegerType"
+      }
+    },
+    "only_for": ["spark"],
+    "tests" : [
+      {
+        "title": "positive_integer_column_name",
+        "exact_match_out": false,
+        "in": {
+          "column": "0"
+        },
+        "out": {
+          "success": true
+        }
+      },
+      {
+        "title": "positive_spark_headerless_column_name",
+        "exact_match_out": false,
+        "in": {
+          "column": "_c0"
+      },
+        "out": {
+          "success": true
+        }
+      }
+    ]
+  }]
+}

@@ -239,6 +239,7 @@ def get_metric_kwargs(
     configuration: Optional["ExpectationConfiguration"] = None,  # noqa: F821
     runtime_configuration: Optional[dict] = None,
 ) -> Dict:
+    # something to do with this here, if they are all null?
     try:
         metric_definition = _registered_metrics.get(metric_name)
         if metric_definition is None:
