@@ -4,6 +4,26 @@
 Changelog
 #########
 
+0.15.24
+-----------------
+* [FEATURE] context.save_datasource (#6009)
+* [FEATURE] Since value set in expectation kwargs is list of strings, do not emit expect_column_values_to_be_in_set for datetime valued columns (#6046)
+* [FEATURE] add failed expectations list to slack message (#5812) (thanks @itaise)
+* [BUGFIX] Standardize `ConfiguredAssetSqlDataConnector` config in `datasource new` CLI workflow (#6044)
+* [DOCS] DOC-371 update the getting started tutorial for data assistants (#6024)
+* [DOCS] DOCS-369 sql data connector configuration guide (#6002)
+* [DOCS] Update "How to create an Expectation Suite with the Onboarding Data Assistant" (#6050)
+* [DOCS] How to get one or more Batches of data from a configured Datasource (#6043)
+* [MAINTENANCE] Remove outdated entry from release schedule JSON (#6032)
+* [MAINTENANCE] Clean up Spark schema tests to have proper names (#6033)
+* [MAINTENANCE] 0.15.24 (#6045)
+* [MAINTENANCE] Clean up of DataAssistant tests that depend on Jupyter notebooks (#6039)
+* [MAINTENANCE] AbstractDataContext.datasource_save() test simplifications (#6052)
+* [MAINTENANCE] Rough architecture for cloud migration tool (#6054)
+* [MAINTENANCE] Include git commit info when building docker image. (#6060)
+* [MAINTENANCE] Allow `CloudDataContext` to retrieve and initialize its own project config (#6006)
+* [MAINTENANCE] Removing Jupyter notebook-based tests for DataAssistants (#6062)
+
 0.15.23
 -----------------
 * [FEATURE] do not require expectation_suite_name in DataAssistantResult.show_expectations_by...() methods (#5976)
